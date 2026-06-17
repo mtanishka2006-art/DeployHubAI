@@ -361,5 +361,17 @@ class ImportResult(BaseModel):
     commits: int
     deployments: int
     incidents: int
+    pipelines: int = 0
     events_ingested: int
     app: Optional[ConnectedAppOut] = None
+
+
+class PipelineOut(BaseModel):
+    id: int
+    provider: str
+    name: str
+    file_path: str
+    triggers: List[str] = Field(default_factory=list)
+    stages: List[str] = Field(default_factory=list)
+    status: str
+    app_name: str

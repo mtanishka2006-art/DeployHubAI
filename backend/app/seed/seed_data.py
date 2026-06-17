@@ -33,6 +33,7 @@ from app.db.models import (
     Incident,
     InfrastructureMetric,
     MissionControlReport,
+    Pipeline,
     RecoveryAction,
     ReplicationStatus,
     Severity,
@@ -407,6 +408,7 @@ def reset_platform_data(db: Session) -> None:
     safe regardless of FK cascade support (e.g. SQLite).
     """
     for model in (
+        Pipeline,
         ConnectorEvent,
         ConnectedApp,
         RecoveryAction,

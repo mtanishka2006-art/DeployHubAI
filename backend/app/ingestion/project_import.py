@@ -24,8 +24,9 @@ from typing import Any, Dict, List
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.db.models import ConnectedApp
+from app.db.models import ConnectedApp, Pipeline
 from app.ingestion.pipeline import ingest_events
+from app.ingestion.pipelines import detect_pipelines
 from app.schemas.events import EventType, UnifiedEvent
 
 logger = get_logger("ingestion.project_import")
@@ -275,6 +276,21 @@ def _ingest_root(
 
     events, services, commit_count, incident_count = _build_events(root, app, source)
     ingested = ingest_events(db, events, connected_app=approw)
+
+    # Detect & store CI/CD pipelines defined in the repo.
+    detected = detect_pipelines(root)
+    for p in detected:
+        db.add(
+            Pipeline(
+                connected_app_id=approw.id,
+                provider=p["provider"],
+                name=p["name"],
+                file_path=p["file_path"],
+                triggers=p["triggers"],
+                stages=p["stages"],
+            )
+        )
+    db.commit()
     db.refresh(approw)
     return {
         "ok": True,
@@ -284,9 +300,10 @@ def _ingest_root(
         "deployments": sum(1 for e in events
                            if e.event_type == EventType.DEPLOYMENT.value),
         "incidents": incident_count,
+        "pipelines": len(detected),
         "events_ingested": ingested,
-        "message": f"Imported {app}: {commit_count} commits across "
-                   f"{len(services)} services, {incident_count} incidents.",
+        "message": f"Imported {app}: {commit_count} commits, {len(services)} "
+                   f"services, {incident_count} incidents, {len(detected)} pipelines.",
         "app": approw,
     }
 

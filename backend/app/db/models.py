@@ -334,6 +334,23 @@ class ConnectorEvent(Base, TimestampMixin):
     app: Mapped["ConnectedApp"] = relationship(back_populates="events")
 
 
+class Pipeline(Base, TimestampMixin):
+    """A CI/CD pipeline definition detected in a connected source's repo."""
+
+    __tablename__ = "pipelines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    connected_app_id: Mapped[int] = mapped_column(
+        ForeignKey("connected_apps.id", ondelete="CASCADE"), index=True
+    )
+    provider: Mapped[str] = mapped_column(String(40), index=True)  # github_actions…
+    name: Mapped[str] = mapped_column(String(200))
+    file_path: Mapped[str] = mapped_column(String(255), default="")
+    triggers: Mapped[list] = mapped_column(JSON, default=list)
+    stages: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(20), default="defined")
+
+
 class SimulationReport(Base, TimestampMixin):
     __tablename__ = "simulation_reports"
 

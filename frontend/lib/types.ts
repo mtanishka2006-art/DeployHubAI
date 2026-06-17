@@ -235,8 +235,20 @@ export interface ImportResult {
   commits: number;
   deployments: number;
   incidents: number;
+  pipelines?: number;
   events_ingested: number;
   app?: ConnectedApp;
+}
+
+export interface Pipeline {
+  id: number;
+  provider: string;
+  name: string;
+  file_path: string;
+  triggers: string[];
+  stages: string[];
+  status: string;
+  app_name: string;
 }
 
 export interface ConnectedApp {

@@ -157,6 +157,11 @@ export function getServices(): Promise<string[]> {
   return request<string[]>("/services");
 }
 
+// ---- Pipelines ----
+export function getPipelines(): Promise<import("./types").Pipeline[]> {
+  return request<import("./types").Pipeline[]>("/pipelines");
+}
+
 // ---- Metrics ----
 export function getMetrics(params?: {
   service?: string;

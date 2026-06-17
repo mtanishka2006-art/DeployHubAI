@@ -26,6 +26,7 @@ from app.api.routes import (
     metrics,
     mission_control,
     overview,
+    pipelines,
     simulation,
 )
 
@@ -86,6 +87,7 @@ for module in (
     mission_control,
     simulation,
     connectors,
+    pipelines,
 ):
     app.include_router(module.router, prefix=API)
 

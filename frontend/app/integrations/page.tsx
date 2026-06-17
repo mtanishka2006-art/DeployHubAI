@@ -155,7 +155,8 @@ export default function IntegrationsPage() {
       const res = await importProject(file, replaceData);
       setNotice(
         `Imported ${res.app_name}: ${res.commits} commits → ${res.deployments} ` +
-          `deployments, ${res.incidents} incidents across ${res.services.length} services.` +
+          `deployments, ${res.incidents} incidents, ${res.pipelines ?? 0} pipelines ` +
+          `across ${res.services.length} services.` +
           (replaceData ? " Dashboards now show only this app." : "")
       );
       await load();

@@ -33,6 +33,7 @@ langgraph==0.1.5
 anthropic==0.30.1
 
 # ---- Utilities ----
+PyYAML==6.0.1  # accurate CI/CD pipeline-file parsing (graceful fallback if absent)
 numpy==1.26.4
 httpx==0.27.0
 tenacity==8.4.2

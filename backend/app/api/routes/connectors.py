@@ -149,6 +149,7 @@ async def import_project(
         commits=result["commits"],
         deployments=result["deployments"],
         incidents=result["incidents"],
+        pipelines=result.get("pipelines", 0),
         events_ingested=result["events_ingested"],
         app=ConnectedAppOut.model_validate(result["app"]),
     )
