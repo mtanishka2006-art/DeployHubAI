@@ -16,6 +16,12 @@ import type {
   ScenarioInfo,
   SimulationResult,
   SimulationRunBody,
+  AvailableConnector,
+  ConnectConnectorBody,
+  ConnectedApp,
+  ConnectorEvent,
+  ImportResult,
+  SyncResult,
 } from "./types";
 
 export const API_BASE =
@@ -147,6 +153,10 @@ export function getOverview(): Promise<Overview> {
   return request<Overview>("/overview");
 }
 
+export function getServices(): Promise<string[]> {
+  return request<string[]>("/services");
+}
+
 // ---- Metrics ----
 export function getMetrics(params?: {
   service?: string;
@@ -227,4 +237,72 @@ export function runSimulation(
     method: "POST",
     body,
   });
+}
+
+// ---- App Connector Hub ----
+export function getAvailableConnectors(): Promise<AvailableConnector[]> {
+  return request<AvailableConnector[]>("/connectors/available");
+}
+
+export function getConnectedApps(): Promise<ConnectedApp[]> {
+  return request<ConnectedApp[]>("/connectors");
+}
+
+export function connectConnector(body: ConnectConnectorBody): Promise<SyncResult> {
+  return request<SyncResult>("/connectors/connect", { method: "POST", body });
+}
+
+export function syncConnector(id: number): Promise<SyncResult> {
+  return request<SyncResult>(`/connectors/${id}/sync`, { method: "POST" });
+}
+
+export function deleteConnector(id: number): Promise<void> {
+  return request<void>(`/connectors/${id}`, { method: "DELETE" });
+}
+
+export function getConnectorEvents(
+  id: number,
+  limit = 5
+): Promise<ConnectorEvent[]> {
+  return request<ConnectorEvent[]>(`/connectors/${id}/events`, {
+    query: { limit },
+  });
+}
+
+// Multipart upload — uses fetch directly (the JSON request() helper can't send FormData).
+export async function importProject(
+  file: File,
+  replace = true
+): Promise<ImportResult> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("replace", String(replace));
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/connectors/import`, {
+      method: "POST",
+      headers,
+      body: form,
+    });
+  } catch {
+    throw new ApiError(`Cannot reach API at ${API_BASE}.`, 0);
+  }
+  if (res.status === 401) {
+    clearAuth();
+    throw new ApiError("Unauthorized. Please log in again.", 401);
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      detail = (await res.json()).detail || detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(detail, res.status);
+  }
+  return (await res.json()) as ImportResult;
 }

@@ -268,6 +268,7 @@ class HealthByService(BaseModel):
     service: str
     score: int
     status: str
+    connectors: List[str] = Field(default_factory=list)  # live data sources
 
 
 class SystemHealth(BaseModel):
@@ -288,3 +289,77 @@ class OverviewResponse(BaseModel):
     recent_deployments: List[DeploymentOut]
     incident_timeline: List[Dict[str, Any]]
     health_by_service: List[HealthByService]
+
+
+# --------------------------------------------------------------------------- #
+# App Connector Hub
+# --------------------------------------------------------------------------- #
+class ConnectorField(BaseModel):
+    name: str
+    label: str
+    type: str = "text"
+    placeholder: str = ""
+    required: bool = True
+
+
+class AvailableConnector(BaseModel):
+    app_type: str
+    label: str
+    description: str
+    icon: str
+    live_supported: bool
+    upload: bool = False  # true => upload a .zip instead of credentials
+    fields: List[ConnectorField]
+
+
+class ConnectConnectorRequest(BaseModel):
+    app_type: str
+    name: Optional[str] = None
+    credentials: Dict[str, Any] = Field(default_factory=dict)
+    polling_interval_seconds: Optional[int] = None
+    replace: bool = True  # used by git_repo: wipe other data so only this shows
+
+
+class ConnectedAppOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    app_type: str
+    status: str
+    last_synced_at: Optional[datetime] = None
+    last_error: str = ""
+    polling_interval_seconds: int
+    events_ingested: int
+    created_by: str = ""
+    created_at: Optional[datetime] = None
+
+
+class ConnectorEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    app_type: str
+    source: str
+    event_type: str
+    service: str
+    severity: str
+    summary: str
+    timestamp: datetime
+
+
+class SyncResult(BaseModel):
+    ok: bool
+    message: str
+    events_ingested: int = 0
+    app: Optional[ConnectedAppOut] = None
+
+
+class ImportResult(BaseModel):
+    ok: bool
+    message: str
+    app_name: str
+    services: List[str]
+    commits: int
+    deployments: int
+    incidents: int
+    events_ingested: int
+    app: Optional[ConnectedAppOut] = None

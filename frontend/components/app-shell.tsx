@@ -11,6 +11,7 @@ import {
   BrainCircuit,
   Radar,
   FlaskConical,
+  Plug,
   LogOut,
   UserCircle,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const NAV = [
   { href: "/incidents", label: "Incident Center", icon: AlertOctagon },
   { href: "/disaster-recovery", label: "Disaster Recovery", icon: ShieldCheck },
   { href: "/memory", label: "Infra Memory", icon: BrainCircuit },
+  { href: "/integrations", label: "Integrations", icon: Plug },
   { href: "/mission-control", label: "Mission Control", icon: Radar },
   { href: "/simulation", label: "Simulation Center", icon: FlaskConical },
 ];

@@ -9,6 +9,10 @@ email-validator==2.2.0
 # ---- Auth ----
 python-jose[cryptography]==3.3.0
 bcrypt==4.1.3
+cryptography==42.0.8  # Fernet encryption for connector credentials at rest
+
+# ---- Connectors (optional live deps; graceful fallback if absent) ----
+boto3==1.34.131  # AWS CloudWatch (optional)
 
 # ---- Database ----
 SQLAlchemy==2.0.31

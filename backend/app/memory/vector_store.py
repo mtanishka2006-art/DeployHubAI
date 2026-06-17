@@ -41,6 +41,10 @@ class VectorStore(ABC):
     @abstractmethod
     def count(self, collection: str) -> int: ...
 
+    @abstractmethod
+    def reset(self) -> None:
+        """Drop all stored vectors across every collection."""
+
 
 class ChromaVectorStore(VectorStore):
     def __init__(self) -> None:
@@ -90,6 +94,16 @@ class ChromaVectorStore(VectorStore):
     def count(self, collection) -> int:
         return self._cols[collection].count()
 
+    def reset(self) -> None:
+        for name in list(self._cols):
+            try:
+                self._client.delete_collection(name)
+            except Exception:  # noqa: BLE001
+                pass
+            self._cols[name] = self._client.get_or_create_collection(
+                name, metadata={"hnsw:space": "cosine"}
+            )
+
 
 class InMemoryVectorStore(VectorStore):
     """Cosine-similarity store backed by the embedding provider. Keeps the RAG
@@ -125,6 +139,9 @@ class InMemoryVectorStore(VectorStore):
 
     def count(self, collection) -> int:
         return len(self._data.get(collection, []))
+
+    def reset(self) -> None:
+        self._data = {c: [] for c in COLLECTIONS}
 
     @staticmethod
     def _cosine(a: List[float], b: List[float]) -> float:

@@ -18,6 +18,7 @@ from app.db.base import Base
 from app.db.session import SessionLocal, engine
 from app.api.routes import (
     auth,
+    connectors,
     deployments,
     dr,
     incidents,
@@ -46,8 +47,13 @@ async def lifespan(app: FastAPI):
             logger.exception("seeding failed (continuing)")
         finally:
             db.close()
+    # Start the App Connector Hub background poller.
+    from app.ingestion.poller import start_poller, stop_poller
+
+    await start_poller()
     logger.info("%s API ready (env=%s)", settings.APP_NAME, settings.ENVIRONMENT)
     yield
+    await stop_poller()
 
 
 app = FastAPI(
@@ -79,6 +85,7 @@ for module in (
     memory,
     mission_control,
     simulation,
+    connectors,
 ):
     app.include_router(module.router, prefix=API)
 

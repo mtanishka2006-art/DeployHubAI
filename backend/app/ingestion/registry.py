@@ -11,11 +11,14 @@ from app.core.logging import get_logger
 from app.ingestion.aws import AWSConnector
 from app.ingestion.azure import AzureConnector
 from app.ingestion.base import BaseConnector
+from app.ingestion.datadog import DatadogConnector
 from app.ingestion.disaster_recovery import DisasterRecoveryConnector
 from app.ingestion.github_actions import GithubActionsConnector
 from app.ingestion.jenkins import JenkinsConnector
+from app.ingestion.jira import JiraConnector
 from app.ingestion.kubernetes import KubernetesConnector
 from app.ingestion.logs import LogConnector
+from app.ingestion.pagerduty import PagerDutyConnector
 
 logger = get_logger(__name__)
 
@@ -27,6 +30,9 @@ CONNECTOR_REGISTRY: Dict[str, Type[BaseConnector]] = {
     "kubernetes": KubernetesConnector,
     "logs": LogConnector,
     "disaster_recovery": DisasterRecoveryConnector,
+    "jira": JiraConnector,
+    "pagerduty": PagerDutyConnector,
+    "datadog": DatadogConnector,
 }
 
 

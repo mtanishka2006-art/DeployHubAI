@@ -57,6 +57,15 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     LLM_MODEL: str = "claude-opus-4-8"
 
+    # ---- App Connector Hub ----
+    # Key for encrypting connector credentials at rest. Falls back to a key
+    # deterministically derived from JWT_SECRET so it works with zero config.
+    FERNET_KEY: str = ""
+    # Background poller that pulls live data from connected apps.
+    CONNECTOR_POLLING_ENABLED: bool = True
+    CONNECTOR_POLL_TICK_SECONDS: int = 15  # how often the poller wakes up
+    CONNECTOR_DEFAULT_INTERVAL_SECONDS: int = 60  # default per-app cadence
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, v):

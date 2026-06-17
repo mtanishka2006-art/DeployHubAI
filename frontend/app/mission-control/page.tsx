@@ -12,7 +12,11 @@ import {
   FileText,
   Play,
 } from "lucide-react";
-import { runMissionControl, getMissionControlReports } from "@/lib/api";
+import {
+  runMissionControl,
+  getMissionControlReports,
+  getServices,
+} from "@/lib/api";
 import type { MissionControlReport, RecommendedAction } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,21 +37,12 @@ function asText(v: unknown): string {
   return String(v);
 }
 
-const SERVICES = [
-  "checkout-service",
-  "payments-service",
-  "order-service",
-  "inventory-service",
-  "user-service",
-  "api-gateway",
-  "search-service",
-];
-
 export default function MissionControlPage() {
   const [description, setDescription] = React.useState(
-    "Elevated 5xx errors and latency on checkout after the latest release"
+    "Investigate recent errors and latency after the latest release"
   );
-  const [service, setService] = React.useState("checkout-service");
+  const [services, setServices] = React.useState<string[]>([]);
+  const [service, setService] = React.useState("");
   const [running, setRunning] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [report, setReport] = React.useState<MissionControlReport | null>(null);
@@ -63,6 +58,13 @@ export default function MissionControlPage() {
 
   React.useEffect(() => {
     loadReports();
+    // Populate the service picker from the actual connected/imported app.
+    getServices()
+      .then((s) => {
+        setServices(s);
+        setService((cur) => cur || s[0] || "");
+      })
+      .catch(() => {});
   }, [loadReports]);
 
   const run = async (e: React.FormEvent) => {
@@ -120,12 +122,17 @@ export default function MissionControlPage() {
                   <Select
                     value={service}
                     onChange={(e) => setService(e.target.value)}
+                    disabled={services.length === 0}
                   >
-                    {SERVICES.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
+                    {services.length === 0 ? (
+                      <option value="">No services yet — connect an app</option>
+                    ) : (
+                      services.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))
+                    )}
                   </Select>
                 </div>
                 <p className="rounded-md border border-border bg-background/40 px-3 py-2 text-[11px] text-muted-foreground">
@@ -133,7 +140,11 @@ export default function MissionControlPage() {
                   health, root cause, and DR readiness — it appears in the report.
                 </p>
                 {error && <ErrorState message={error} />}
-                <Button type="submit" disabled={running} className="w-full">
+                <Button
+                  type="submit"
+                  disabled={running || !service}
+                  className="w-full"
+                >
                   {running ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />

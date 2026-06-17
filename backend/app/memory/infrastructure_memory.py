@@ -175,6 +175,10 @@ class InfrastructureMemory:
 
         return {c: self._store.count(c) for c in COLLECTIONS}
 
+    def reset(self) -> None:
+        """Clear all vector collections (used when replacing dashboard data)."""
+        self._store.reset()
+
     @staticmethod
     def _incident_document(
         title: str, summary: str, root_cause: str, service: str

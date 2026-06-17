@@ -38,6 +38,7 @@ export interface HealthByService {
   service: string;
   score: number;
   status: string;
+  connectors?: string[];
 }
 
 export interface Overview {
@@ -205,6 +206,76 @@ export interface ScenarioInfo {
   severity: string;
   target_param: "region" | "target";
   targets: string[];
+}
+
+// ---- App Connector Hub ----
+export interface ConnectorField {
+  name: string;
+  label: string;
+  type: string;
+  placeholder?: string;
+  required: boolean;
+}
+
+export interface AvailableConnector {
+  app_type: string;
+  label: string;
+  description: string;
+  icon: string;
+  live_supported: boolean;
+  upload?: boolean;
+  fields: ConnectorField[];
+}
+
+export interface ImportResult {
+  ok: boolean;
+  message: string;
+  app_name: string;
+  services: string[];
+  commits: number;
+  deployments: number;
+  incidents: number;
+  events_ingested: number;
+  app?: ConnectedApp;
+}
+
+export interface ConnectedApp {
+  id: number;
+  name: string;
+  app_type: string;
+  status: string;
+  last_synced_at?: string | null;
+  last_error?: string;
+  polling_interval_seconds: number;
+  events_ingested: number;
+  created_by?: string;
+  created_at?: string;
+}
+
+export interface ConnectorEvent {
+  id: number;
+  app_type: string;
+  source: string;
+  event_type: string;
+  service: string;
+  severity: string;
+  summary: string;
+  timestamp: string;
+}
+
+export interface SyncResult {
+  ok: boolean;
+  message: string;
+  events_ingested: number;
+  app?: ConnectedApp;
+}
+
+export interface ConnectConnectorBody {
+  app_type: string;
+  name?: string;
+  credentials: Record<string, string>;
+  polling_interval_seconds?: number;
+  replace?: boolean;
 }
 
 export interface AffectedService {

@@ -283,6 +283,57 @@ class MissionControlReport(Base, TimestampMixin):
     raw_outputs: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class ConnectedApp(Base, TimestampMixin):
+    """A third-party application connected via the App Connector Hub.
+
+    Credentials are stored encrypted (Fernet) in ``credentials_encrypted`` and
+    are never returned to the client.
+    """
+
+    __tablename__ = "connected_apps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    app_type: Mapped[str] = mapped_column(String(60), index=True)
+    credentials_encrypted: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    # pending | connected | error | disconnected
+    last_synced_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    polling_interval_seconds: Mapped[int] = mapped_column(Integer, default=60)
+    events_ingested: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[str] = mapped_column(String(120), default="")
+
+    events: Mapped[list["ConnectorEvent"]] = relationship(
+        back_populates="app", cascade="all, delete-orphan"
+    )
+
+
+class ConnectorEvent(Base, TimestampMixin):
+    """A lightweight log of each event a connector ingested (for the live feed
+    and dashboard 'which connector feeds this service' badges)."""
+
+    __tablename__ = "connector_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    connected_app_id: Mapped[int] = mapped_column(
+        ForeignKey("connected_apps.id", ondelete="CASCADE"), index=True
+    )
+    app_type: Mapped[str] = mapped_column(String(60), index=True)
+    source: Mapped[str] = mapped_column(String(60))
+    event_type: Mapped[str] = mapped_column(String(40))
+    service: Mapped[str] = mapped_column(String(120), index=True)
+    severity: Mapped[str] = mapped_column(String(20), default="info")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
+
+    app: Mapped["ConnectedApp"] = relationship(back_populates="events")
+
+
 class SimulationReport(Base, TimestampMixin):
     __tablename__ = "simulation_reports"
 

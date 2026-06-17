@@ -21,7 +21,10 @@ from app.core.logging import get_logger
 from app.core.security import Role, hash_password
 from app.db.base import utcnow
 from app.db.models import (
+    AgentOutput,
     Backup,
+    ConnectedApp,
+    ConnectorEvent,
     Deployment,
     DeploymentStatus,
     DisasterRecoveryEvent,
@@ -29,8 +32,11 @@ from app.db.models import (
     HistoricalIncident,
     Incident,
     InfrastructureMetric,
+    MissionControlReport,
+    RecoveryAction,
     ReplicationStatus,
     Severity,
+    SimulationReport,
     User,
 )
 from app.memory.infrastructure_memory import get_memory
@@ -393,8 +399,49 @@ def sync_vector_memory(db: Session) -> None:
     logger.info("synced %d records into vector memory", count)
 
 
+def reset_platform_data(db: Session) -> None:
+    """Wipe all operational data + connectors + vector memory (keeps users).
+
+    Used when importing a project in 'replace' mode so the dashboards reflect
+    ONLY the uploaded application. Deletes child rows before parents to stay
+    safe regardless of FK cascade support (e.g. SQLite).
+    """
+    for model in (
+        ConnectorEvent,
+        ConnectedApp,
+        RecoveryAction,
+        AgentOutput,
+        MissionControlReport,
+        SimulationReport,
+        Incident,
+        Deployment,
+        InfrastructureMetric,
+        DisasterRecoveryEvent,
+        Backup,
+        FailoverEvent,
+        ReplicationStatus,
+        HistoricalIncident,
+    ):
+        db.query(model).delete(synchronize_session=False)
+    db.commit()
+    try:
+        get_memory().reset()
+    except Exception:  # noqa: BLE001
+        logger.warning("vector memory reset skipped")
+    logger.info("platform data reset (operational tables + memory cleared)")
+
+
+def has_real_data(db: Session) -> bool:
+    """True once the user has connected/imported a real source."""
+    return db.query(ConnectedApp).count() > 0
+
+
 def run_all(db: Session) -> None:
     seed_users(db)
+    # Once the user has connected real apps, never re-add synthetic demo data.
+    if has_real_data(db):
+        sync_vector_memory(db)
+        return
     seed_operational_data(db)
     seed_historical_incidents(db)
     sync_vector_memory(db)

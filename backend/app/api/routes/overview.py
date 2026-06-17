@@ -31,6 +31,22 @@ from app.schemas.api import (
 router = APIRouter(tags=["overview"])
 
 
+@router.get("/services", response_model=list[str])
+def services(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Distinct services currently present in the platform's data — used to
+    populate service pickers so they reflect the connected/imported app."""
+    names: set[str] = set()
+    for column in (
+        InfrastructureMetric.service,
+        Deployment.service,
+        Incident.service,
+    ):
+        for (name,) in db.execute(select(column).distinct()).all():
+            if name:
+                names.add(name)
+    return sorted(names)
+
+
 @router.get("/overview", response_model=OverviewResponse)
 def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     since = utcnow() - timedelta(hours=24)
@@ -60,6 +76,15 @@ def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user))
             select(InfrastructureMetric.service).distinct().limit(12)
         ).all()
     ]
+    # Which connector app_types have fed each service (for live-data badges).
+    from app.db.models import ConnectorEvent
+
+    connector_map: dict[str, set] = {}
+    for svc, app_type in db.execute(
+        select(ConnectorEvent.service, ConnectorEvent.app_type).distinct()
+    ).all():
+        connector_map.setdefault(svc, set()).add(app_type)
+
     mon = MonitoringAgent(db)
     health_by_service = []
     overall_scores = []
@@ -80,7 +105,10 @@ def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user))
         overall_scores.append(score)
         health_by_service.append(
             HealthByService(
-                service=svc, score=score, status=result["health_status"]
+                service=svc,
+                score=score,
+                status=result["health_status"],
+                connectors=sorted(connector_map.get(svc, set())),
             )
         )
 

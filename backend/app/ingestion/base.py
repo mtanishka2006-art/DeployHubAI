@@ -50,6 +50,18 @@ class BaseConnector(ABC):
         """Establish credentials. Default is a no-op (token read from config)."""
         self._authenticated = True
 
+    def test_connection(self) -> "tuple[bool, str]":
+        """Cheaply validate credentials without a full fetch.
+
+        Returns (ok, message). Default assumes no credentials are required.
+        Connectors that talk to real APIs override this.
+        """
+        return True, "no credentials required"
+
+    def _has(self, *keys: str) -> bool:
+        """True if every given credential key is present and non-empty."""
+        return all(self.config.get(k) for k in keys)
+
     @abstractmethod
     def fetch_raw(self) -> Iterable[Dict[str, Any]]:
         """Pull raw records from the upstream system."""

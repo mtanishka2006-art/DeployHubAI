@@ -7,7 +7,22 @@ import {
   RefreshCw,
   ShieldCheck,
   Rocket,
+  Github,
+  Cloud,
+  ClipboardList,
+  BellRing,
+  Boxes,
+  Plug,
 } from "lucide-react";
+
+const CONNECTOR_ICONS: Record<string, typeof Activity> = {
+  github_actions: Github,
+  aws: Cloud,
+  jira: ClipboardList,
+  pagerduty: BellRing,
+  datadog: Activity,
+  kubernetes: Boxes,
+};
 import { getOverview } from "@/lib/api";
 import type { Overview } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
@@ -155,7 +170,25 @@ export default function OverviewPage() {
                     data.health_by_service.map((s) => (
                       <div key={s.service}>
                         <div className="mb-1 flex items-center justify-between text-xs">
-                          <span className="font-medium">{s.service}</span>
+                          <span className="flex items-center gap-1.5 font-medium">
+                            {s.service}
+                            {s.connectors && s.connectors.length > 0 && (
+                              <span
+                                className="flex items-center gap-1"
+                                title={`Live data from: ${s.connectors.join(", ")}`}
+                              >
+                                {s.connectors.map((c) => {
+                                  const Ico = CONNECTOR_ICONS[c] || Plug;
+                                  return (
+                                    <Ico
+                                      key={c}
+                                      className="h-3 w-3 text-emerald-400"
+                                    />
+                                  );
+                                })}
+                              </span>
+                            )}
+                          </span>
                           <div className="flex items-center gap-2">
                             <Badge
                               variant={statusVariant(s.status)}
