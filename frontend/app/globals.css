@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 222 47% 7%;
+  --foreground: 210 40% 96%;
+  --card: 222 44% 10%;
+  --card-foreground: 210 40% 96%;
+  --primary: 199 89% 48%;
+  --primary-foreground: 222 47% 7%;
+  --secondary: 217 33% 17%;
+  --secondary-foreground: 210 40% 96%;
+  --muted: 217 33% 15%;
+  --muted-foreground: 215 20% 60%;
+  --accent: 217 33% 20%;
+  --accent-foreground: 210 40% 96%;
+  --border: 217 33% 20%;
+  --input: 217 33% 18%;
+  --ring: 199 89% 48%;
+  --radius: 0.6rem;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html,
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+body {
+  background-image:
+    radial-gradient(circle at 15% 0%, hsl(199 89% 48% / 0.06), transparent 40%),
+    radial-gradient(circle at 85% 10%, hsl(265 89% 60% / 0.05), transparent 40%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
+
+.grid-glow {
+  background-image: linear-gradient(
+      hsl(var(--border) / 0.4) 1px,
+      transparent 1px
+    ),
+    linear-gradient(90deg, hsl(var(--border) / 0.4) 1px, transparent 1px);
+  background-size: 40px 40px;
+}

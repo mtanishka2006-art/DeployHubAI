@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+backend/.venv/
+backend/venv/
+*.db
+backend/chroma_data/
+backend/deployhub*.db
+
+# Node / Next
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+*.tsbuildinfo
+frontend/next-env.d.ts
+
+# Env
+.env
+.env.local
+frontend/.env.local
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
