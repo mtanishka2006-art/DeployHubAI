@@ -346,6 +346,19 @@ class ConnectorEventOut(BaseModel):
     timestamp: datetime
 
 
+class LogEntryOut(BaseModel):
+    """A single ingested log line, surfaced on the dedicated Logs page."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    source: str
+    app_type: str
+    service: str
+    severity: str
+    message: str = Field(validation_alias="summary")
+    timestamp: datetime
+
+
 class SyncResult(BaseModel):
     ok: bool
     message: str

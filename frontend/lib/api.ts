@@ -21,6 +21,7 @@ import type {
   ConnectedApp,
   ConnectorEvent,
   ImportResult,
+  LogEntry,
   SyncResult,
 } from "./types";
 
@@ -200,6 +201,20 @@ export function getDrStatus(): Promise<DrStatus> {
 
 export function getDrEvents(params?: { limit?: number }): Promise<DrEvent[]> {
   return request<DrEvent[]>("/dr/events", { query: params });
+}
+
+// ---- Logs ----
+export function getLogs(params?: {
+  service?: string;
+  severity?: string;
+  q?: string;
+  limit?: number;
+}): Promise<LogEntry[]> {
+  return request<LogEntry[]>("/logs", { query: params });
+}
+
+export function getLogServices(): Promise<string[]> {
+  return request<string[]>("/logs/services");
 }
 
 // ---- Memory ----

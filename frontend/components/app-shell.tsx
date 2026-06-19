@@ -13,6 +13,7 @@ import {
   FlaskConical,
   Plug,
   Workflow,
+  ScrollText,
   LogOut,
   UserCircle,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import { Badge } from "@/components/ui/badge";
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/incidents", label: "Incident Center", icon: AlertOctagon },
+  { href: "/logs", label: "Logs", icon: ScrollText },
   { href: "/disaster-recovery", label: "Disaster Recovery", icon: ShieldCheck },
   { href: "/memory", label: "Infra Memory", icon: BrainCircuit },
   { href: "/integrations", label: "Integrations", icon: Plug },

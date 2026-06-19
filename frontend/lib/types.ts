@@ -275,6 +275,16 @@ export interface ConnectorEvent {
   timestamp: string;
 }
 
+export interface LogEntry {
+  id: number;
+  source: string;
+  app_type: string;
+  service: string;
+  severity: string;
+  message: string;
+  timestamp: string;
+}
+
 export interface SyncResult {
   ok: boolean;
   message: string;
