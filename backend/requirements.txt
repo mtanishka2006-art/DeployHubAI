@@ -17,7 +17,7 @@ boto3==1.34.131  # AWS CloudWatch (optional)
 # ---- Database ----
 SQLAlchemy==2.0.31
 alembic==1.13.2
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.10
 
 # ---- Messaging (optional at runtime; falls back to in-memory bus) ----
 kafka-python==2.0.2
