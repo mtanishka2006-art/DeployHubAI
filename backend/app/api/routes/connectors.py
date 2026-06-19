@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_role
@@ -207,6 +207,19 @@ def disconnect(
     app = db.get(ConnectedApp, app_id)
     if not app:
         raise HTTPException(status_code=404, detail="Connector not found")
+    # Deleting the app cascades its ConnectorEvents + Pipelines.
     db.delete(app)
     db.commit()
+
+    # Imported projects (zip / git) are ingested in 'replace' mode, so all the
+    # operational data (metrics, deployments, incidents, DR) belongs solely to
+    # that app — but it isn't FK-linked back to it. Once no connected apps
+    # remain, clear that now-orphaned data and restore the zero-config demo
+    # seed, so the dashboard stops showing the disconnected app's telemetry.
+    remaining = db.scalar(select(func.count(ConnectedApp.id)))
+    if not remaining:
+        from app.seed.seed_data import reset_platform_data, run_all
+
+        reset_platform_data(db)
+        run_all(db)
     return None
