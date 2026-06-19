@@ -23,11 +23,44 @@ from app.messaging.event_bus import get_event_bus
 from app.messaging.topics import SIMULATION_EVENTS
 from app.schemas.events import EventType, UnifiedEvent
 from app.simulation.scenarios import Scenario, get_scenario
-from app.simulation.topology import Topology, default_topology
+from app.simulation.topology import (
+    Topology,
+    default_topology,
+    topology_from_services,
+)
 
 logger = get_logger("simulation")
 
 _IMPACT_BY_TIER = {0: "critical", 1: "high", 2: "moderate", 3: "low"}
+
+
+def build_topology(db: Optional[Session]) -> Topology:
+    """Reflect the imported/connected app's services when one exists; otherwise
+    fall back to the static demo topology.
+
+    This is what makes the Simulation Center mirror the connected project: its
+    services become the simulation's services, mapped onto the standard infra
+    skeleton so the region/cluster/DB/CI scenarios still apply.
+    """
+    if db is not None:
+        try:
+            from sqlalchemy import func, select
+
+            from app.db.models import ConnectedApp, InfrastructureMetric
+
+            if db.scalar(select(func.count(ConnectedApp.id))):
+                services = [
+                    s
+                    for s in db.execute(
+                        select(InfrastructureMetric.service).distinct()
+                    ).scalars().all()
+                    if s
+                ]
+                if services:
+                    return topology_from_services(services)
+        except Exception:  # noqa: BLE001 - never let topology building crash a run
+            logger.debug("dynamic topology build failed; using default")
+    return default_topology()
 
 
 def valid_targets(scenario_type: str, topo: Topology):
@@ -63,7 +96,7 @@ def valid_targets(scenario_type: str, topo: Topology):
 class SimulationEngine:
     def __init__(self, db: Optional[Session] = None, topology: Optional[Topology] = None):
         self.db = db
-        self.topo = topology or default_topology()
+        self.topo = topology or build_topology(db)
 
     def run(
         self, scenario_type: str, target: Optional[str] = None,
@@ -94,6 +127,14 @@ class SimulationEngine:
                 n for n in scenario.failed_nodes(self.topo, {})
                 if n in self.topo.nodes
             }
+
+        if not failed:
+            # The scenario's hardcoded default target (e.g. "checkout-service")
+            # isn't present in an import-derived topology — fall back to the most
+            # critical service so the simulation still produces a result.
+            svc_nodes = sorted(self.topo.services(), key=lambda n: n.tier)
+            if svc_nodes:
+                failed = {svc_nodes[0].id}
 
         impacted = self.topo.impacted_by(failed)  # (node, hop)
         affected_services = self._affected_services(failed, impacted)

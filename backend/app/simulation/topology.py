@@ -92,7 +92,13 @@ class Topology:
         return [n for n in self.nodes.values() if n.kind == "service"]
 
 
-def default_topology() -> Topology:
+def _infra_skeleton() -> Topology:
+    """Shared infrastructure primitives (clouds, regions, clusters, DB, CI).
+
+    Every topology — the default demo and any import-derived one — is built on
+    this same skeleton so the disaster scenarios (region/cluster/DB/CI failures)
+    always have the nodes they target. Callers add services on top.
+    """
     t = Topology()
 
     # ---- Clouds / regions / clusters ----
@@ -113,6 +119,22 @@ def default_topology() -> Topology:
                     tier=3))
     t.add_node(Node("jenkins", "ci", cloud="aws", region="us-east-1", tier=4))
 
+    # ---- Region/cluster/cloud hierarchy ----
+    t.add_edge("aws:us-east-1", "aws", "hosted_in")
+    t.add_edge("aws:us-west-2", "aws", "hosted_in")
+    t.add_edge("azure:eastus", "azure", "hosted_in")
+    t.add_edge("k8s:prod-east", "aws:us-east-1", "hosted_in")
+    t.add_edge("k8s:prod-west", "aws:us-west-2", "hosted_in")
+    t.add_edge("postgres-primary", "aws:us-east-1", "hosted_in")
+    t.add_edge("postgres-replica", "aws:us-west-2", "hosted_in")
+    t.add_edge("postgres-primary", "postgres-replica", "replicates_to")
+    t.add_edge("jenkins", "aws:us-east-1", "hosted_in")
+    return t
+
+
+def default_topology() -> Topology:
+    t = _infra_skeleton()
+
     # ---- Services (tiered) ----
     services = [
         ("api-gateway", 0, "k8s:prod-east"),
@@ -131,17 +153,6 @@ def default_topology() -> Topology:
             Node(name, "service", cloud=node.cloud, region=node.region, tier=tier)
         )
         t.add_edge(name, host, "runs_on")
-
-    # ---- Region/cluster/cloud hierarchy ----
-    t.add_edge("aws:us-east-1", "aws", "hosted_in")
-    t.add_edge("aws:us-west-2", "aws", "hosted_in")
-    t.add_edge("azure:eastus", "azure", "hosted_in")
-    t.add_edge("k8s:prod-east", "aws:us-east-1", "hosted_in")
-    t.add_edge("k8s:prod-west", "aws:us-west-2", "hosted_in")
-    t.add_edge("postgres-primary", "aws:us-east-1", "hosted_in")
-    t.add_edge("postgres-replica", "aws:us-west-2", "hosted_in")
-    t.add_edge("postgres-primary", "postgres-replica", "replicates_to")
-    t.add_edge("jenkins", "aws:us-east-1", "hosted_in")
 
     # ---- Data + deploy dependencies ----
     db_consumers = [
@@ -164,4 +175,50 @@ def default_topology() -> Topology:
     t.add_edge("api-gateway", "order-service", "calls")
     t.add_edge("api-gateway", "user-service", "calls")
     t.add_edge("api-gateway", "search-service", "calls")
+    return t
+
+
+def topology_from_services(services: List[str], max_services: int = 12) -> Topology:
+    """Build a topology whose services are an imported project's services,
+    mapped onto the standard infrastructure skeleton.
+
+    A git repo doesn't describe real infrastructure, so tiers/hosts are assigned
+    heuristically: the first two services are treated as tier-0 (user-facing),
+    the next three as tier-1, and the rest as tier-2 (hosted on Azure). This lets
+    the existing region/cluster/DB/CI scenarios run against the imported app's
+    own service names instead of the static demo set.
+    """
+    # De-dup, preserve order, cap for signal clarity.
+    seen: Set[str] = set()
+    svcs: List[str] = []
+    for s in services:
+        if s and s not in seen:
+            seen.add(s)
+            svcs.append(s)
+        if len(svcs) >= max_services:
+            break
+    if not svcs:
+        return default_topology()
+
+    t = _infra_skeleton()
+    tier0: List[str] = []
+    for i, name in enumerate(svcs):
+        tier = 0 if i < 2 else (1 if i < 5 else 2)
+        host = "azure:eastus" if tier == 2 else "k8s:prod-east"
+        node = t.nodes[host]
+        t.add_node(
+            Node(name, "service", cloud=node.cloud, region=node.region, tier=tier)
+        )
+        t.add_edge(name, host, "runs_on")
+        if tier <= 1:
+            t.add_edge(name, "postgres-primary", "reads_from")
+        t.add_edge(name, "jenkins", "deploys_via")
+        if tier == 0:
+            tier0.append(name)
+
+    # The tier-0 service acts as the gateway and calls everything deeper.
+    gateway = tier0[0] if tier0 else svcs[0]
+    for name in svcs:
+        if name != gateway:
+            t.add_edge(gateway, name, "calls")
     return t

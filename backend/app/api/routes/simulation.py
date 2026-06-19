@@ -8,23 +8,25 @@ from app.core.security import Role
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.api import SimulationRequest, SimulationResponse
-from app.simulation.engine import SimulationEngine, valid_targets
+from app.simulation.engine import SimulationEngine, build_topology, valid_targets
 from app.simulation.scenarios import SCENARIOS
-from app.simulation.topology import default_topology
 from sqlalchemy.orm import Session
 from fastapi import Depends as _Depends
 
 router = APIRouter(prefix="/simulation", tags=["simulation"])
 
-# The topology is static config, so build it once for listing valid targets.
-_TOPOLOGY = default_topology()
-
 
 @router.get("/scenarios")
-def list_scenarios(_: User = Depends(require_role(Role.VIEWER))):
+def list_scenarios(
+    db: Session = _Depends(get_db),
+    _: User = Depends(require_role(Role.VIEWER)),
+):
+    # Build the topology from the connected app (if any) so the target dropdowns
+    # reflect the imported project's services, not the static demo set.
+    topo = build_topology(db)
     out = []
     for s in SCENARIOS.values():
-        param, targets = valid_targets(s.key, _TOPOLOGY)
+        param, targets = valid_targets(s.key, topo)
         out.append(
             {
                 "key": s.key,
