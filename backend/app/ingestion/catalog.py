@@ -24,15 +24,16 @@ CONNECTOR_CATALOG: List[Dict[str, Any]] = [
     {
         "app_type": "github_actions",
         "label": "GitHub Actions",
-        "description": "Pull workflow runs as deployment/pipeline events.",
+        "description": "Pull workflow runs as deployment/pipeline events. "
+        "Public repos need no token.",
         "icon": "github",
         "source": "github_actions",
         "live_supported": True,
         "fields": [
             _field("owner", "Repository owner / org", placeholder="my-org"),
             _field("repo", "Repository name", placeholder="my-service"),
-            _field("token", "Personal access token", secret=True,
-                   placeholder="ghp_..."),
+            _field("token", "Personal access token (private repos only)",
+                   secret=True, placeholder="ghp_...", required=False),
         ],
     },
     {
