@@ -99,6 +99,18 @@ CONNECTOR_CATALOG: List[Dict[str, Any]] = [
         ],
     },
     {
+        "app_type": "website",
+        "label": "Live Website (URL)",
+        "description": "Monitor a live website by URL — real uptime, response "
+        "time and HTTP status, re-probed on a schedule.",
+        "icon": "website",
+        "source": "website",
+        "live_supported": True,
+        "fields": [
+            _field("url", "Website URL", placeholder="https://example.com"),
+        ],
+    },
+    {
         "app_type": "git_repo",
         "label": "Git Repository (URL)",
         "description": "Connect any git repo URL — derives services, deployments "

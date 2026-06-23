@@ -19,6 +19,7 @@ from app.ingestion.jira import JiraConnector
 from app.ingestion.kubernetes import KubernetesConnector
 from app.ingestion.logs import LogConnector
 from app.ingestion.pagerduty import PagerDutyConnector
+from app.ingestion.website import WebsiteConnector
 
 logger = get_logger(__name__)
 
@@ -33,6 +34,7 @@ CONNECTOR_REGISTRY: Dict[str, Type[BaseConnector]] = {
     "jira": JiraConnector,
     "pagerduty": PagerDutyConnector,
     "datadog": DatadogConnector,
+    "website": WebsiteConnector,
 }
 
 

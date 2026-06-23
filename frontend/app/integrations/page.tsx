@@ -17,6 +17,7 @@ import {
   Radio,
   Upload,
   GitBranch,
+  Globe,
 } from "lucide-react";
 import {
   getAvailableConnectors,
@@ -66,6 +67,8 @@ function iconFor(appType: string) {
       return Upload;
     case "git_repo":
       return GitBranch;
+    case "website":
+      return Globe;
     default:
       return Plug;
   }
