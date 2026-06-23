@@ -26,7 +26,6 @@ def sync_connected_app(db: Session, app: ConnectedApp) -> Tuple[int, bool, str]:
         return 0, True, "import-only connector — re-upload the .zip to refresh"
     if app.app_type == "git_repo":
         # Re-clone the repo for a fresh snapshot (full replace).
-        from app.core.crypto import decrypt_dict
         from app.ingestion.project_import import import_git_url
 
         creds = decrypt_dict(app.credentials_encrypted)
