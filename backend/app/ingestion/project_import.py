@@ -21,15 +21,25 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.db.models import ConnectedApp, Pipeline
+from app.db.models import ConnectedApp, Incident, Pipeline
 from app.ingestion.pipeline import ingest_events
 from app.ingestion.pipelines import detect_pipelines
 from app.schemas.events import EventType, UnifiedEvent
 
 logger = get_logger("ingestion.project_import")
+
+# Keyword buckets used to grade an incident's severity from its commit message,
+# instead of marking every fix/bug commit as blanket "high".
+_SEV_CRITICAL = ("revert", "hotfix", "outage", "crash", "critical", "security",
+                 "data loss", "corrupt", "breach")
+_SEV_HIGH = ("fail", "broken", "regress", "exception", "leak", "deadlock",
+             "timeout", "500")
+_SEV_LOW = ("typo", "lint", "comment", "docs", "doc ", "rename", "format",
+            "whitespace", "style")
 
 _INCIDENT_RE = re.compile(
     r"\b(fix|bug|revert|hotfix|error|crash|broken|fail|regress|patch)", re.IGNORECASE
@@ -359,6 +369,49 @@ def _build_dr_events(
     return events
 
 
+def _incident_severity(title: str) -> str:
+    """Grade an incident from its (commit-derived) title instead of blanket-high.
+
+    revert/hotfix/outage → critical · fail/broken/regress → high ·
+    typo/docs/lint → low · everything else (generic fix/bug) → medium.
+    """
+    s = (title or "").lower()
+    if any(k in s for k in _SEV_CRITICAL):
+        return "critical"
+    if any(k in s for k in _SEV_HIGH):
+        return "high"
+    if any(k in s for k in _SEV_LOW):
+        return "low"
+    return "medium"
+
+
+def _grade_and_resolve_incidents(db: Session, source: str) -> None:
+    """Post-process the import's incidents: set a realistic severity per commit
+    type, and auto-resolve any incident that a later commit on the SAME service
+    superseded (only the most recent incident per service stays active).
+    """
+    incidents = db.execute(
+        select(Incident)
+        .where(Incident.source == source)
+        .order_by(Incident.detected_at.desc())
+    ).scalars().all()
+
+    active_services: set = set()  # services whose newest incident we keep open
+    for inc in incidents:  # newest first
+        inc.severity = _incident_severity(inc.title)
+        if inc.service not in active_services:
+            # Newest incident for this service — still an open issue.
+            active_services.add(inc.service)
+            inc.status = "open"
+        else:
+            # An older incident on a service that was fixed again later →
+            # treat it as resolved by the subsequent fix.
+            inc.status = "resolved"
+            if inc.resolved_at is None:
+                inc.resolved_at = inc.detected_at + timedelta(hours=4)
+    db.commit()
+
+
 def _ingest_root(
     db: Session, root: str, app: str, app_type: str, source: str,
     created_by: str, replace: bool, creds_enc: str = "",
@@ -394,6 +447,11 @@ def _ingest_root(
         )
     db.commit()
     db.refresh(approw)
+
+    # Grade severity by commit type and auto-resolve superseded incidents so the
+    # timeline isn't a wall of identical "open / high" entries.
+    _grade_and_resolve_incidents(db, source)
+
     return {
         "ok": True,
         "app_name": app,
