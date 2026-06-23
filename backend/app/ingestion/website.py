@@ -19,6 +19,14 @@ from app.ingestion.base import BaseConnector
 from app.schemas.events import EventType, UnifiedEvent
 
 
+# A browser-ish UA — some hosts (httpstat.us, CDNs, WAFs) drop requests from
+# the default python-httpx client and "disconnect without a response".
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; DeployHub-Monitor/1.0)",
+    "Accept": "*/*",
+}
+
+
 def _service_name(url: str) -> str:
     host = urlparse(url).netloc or url
     return host[4:] if host.startswith("www.") else host or "website"
@@ -37,11 +45,15 @@ class WebsiteConnector(BaseConnector):
         url = self._url()
         if not url:
             return False, "url is required"
+        if not urlparse(url).netloc:
+            return False, "enter a valid URL, e.g. https://example.com"
+        # A down / error-returning site is a VALID monitor target — that's the
+        # whole point — so reachability never blocks the connect.
         try:
-            r = httpx.get(url, timeout=10, follow_redirects=True)
+            r = httpx.get(url, timeout=10, follow_redirects=True, headers=_HEADERS)
+            return True, f"reachable — HTTP {r.status_code}"
         except httpx.HTTPError as exc:
-            return False, f"could not reach {url}: {exc}"
-        return True, f"reachable — HTTP {r.status_code}"
+            return True, f"added — site currently unreachable ({exc}); will be monitored"
 
     def fetch_raw(self) -> Iterable[Dict[str, Any]]:
         url = self._url()
@@ -55,7 +67,7 @@ class WebsiteConnector(BaseConnector):
         error = ""
         start = time.perf_counter()
         try:
-            r = httpx.get(url, timeout=15, follow_redirects=True)
+            r = httpx.get(url, timeout=15, follow_redirects=True, headers=_HEADERS)
             elapsed_ms = (time.perf_counter() - start) * 1000.0
             status_code = r.status_code
         except httpx.HTTPError as exc:

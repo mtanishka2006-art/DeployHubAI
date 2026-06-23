@@ -499,6 +499,10 @@ function ConnectModal({
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const isGitRepo = connector.app_type === "git_repo";
+  // URL-based "primary source" connectors that represent the whole app being
+  // monitored — these default to replacing prior data so the dashboards show
+  // only this source. Credential connectors (GitHub/Datadog) merge instead.
+  const isPrimarySource = isGitRepo || connector.app_type === "website";
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -510,7 +514,7 @@ function ConnectModal({
         name,
         credentials: creds,
         polling_interval_seconds: interval,
-        replace,
+        replace: isPrimarySource ? replace : false,
       });
       onConnected(
         `${connector.label} connected — ${res.events_ingested} event(s) ingested.`
@@ -563,17 +567,7 @@ function ConnectModal({
               </div>
             ))}
 
-            {isGitRepo ? (
-              <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={replace}
-                  onChange={(e) => setReplace(e.target.checked)}
-                  className="h-3.5 w-3.5 accent-sky-500"
-                />
-                Replace existing data (show only this repository)
-              </label>
-            ) : (
+            {!isGitRepo && (
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">
                   Polling interval (seconds)
@@ -585,6 +579,18 @@ function ConnectModal({
                   onChange={(e) => setIntervalSecs(Number(e.target.value) || 60)}
                 />
               </div>
+            )}
+
+            {isPrimarySource && (
+              <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={replace}
+                  onChange={(e) => setReplace(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-sky-500"
+                />
+                Replace existing data (show only this source)
+              </label>
             )}
 
             {!connector.live_supported && (

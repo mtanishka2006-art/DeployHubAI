@@ -99,6 +99,13 @@ def connect(
     else:
         message = "saved (live sync not supported for this integration yet)"
 
+    # Replace mode: wipe prior data/sources so the dashboards reflect ONLY this
+    # source (e.g. a live website monitor should not show old git-import data).
+    if payload.replace and entry["live_supported"]:
+        from app.seed.seed_data import reset_platform_data
+
+        reset_platform_data(db)
+
     app = ConnectedApp(
         name=payload.name or entry["label"],
         app_type=payload.app_type,
