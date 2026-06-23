@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.agents.dr_agent import DisasterRecoveryAgent
+from app.agents.dr_agent import DisasterRecoveryAgent, website_dr_from_metrics
 from app.agents.monitoring_agent import MonitoringAgent
 from app.api.deps import get_current_user
 from app.db.base import utcnow
@@ -118,26 +118,40 @@ def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user))
     )
 
     # DR readiness.
-    dr_agent = DisasterRecoveryAgent(db)
-    dr = dr_agent.analyze(
-        {
-            "backups": [
-                {"system": b.system, "status": b.status,
-                 "last_backup": b.last_backup.isoformat(), "rpo_minutes": b.rpo_minutes}
-                for b in db.execute(select(Backup)).scalars().all()
-            ],
-            "replication": [
-                {"source": r.source, "target": r.target, "status": r.status,
-                 "lag_seconds": r.lag_seconds}
-                for r in db.execute(select(ReplicationStatus)).scalars().all()
-            ],
-            "failovers": [
-                {"service": f.service, "status": f.status,
-                 "last_tested": f.last_tested.isoformat() if f.last_tested else None}
-                for f in db.execute(select(FailoverEvent)).scalars().all()
-            ],
-        }
-    )
+    backup_rows = db.execute(select(Backup)).scalars().all()
+    repl_rows = db.execute(select(ReplicationStatus)).scalars().all()
+    failover_rows = db.execute(select(FailoverEvent)).scalars().all()
+
+    web_dr = None
+    if not backup_rows and not repl_rows and not failover_rows:
+        # No infra DR telemetry — score a connected website from its real
+        # measured resilience signals (TLS, DNS redundancy, uptime).
+        web_dr = website_dr_from_metrics(db)
+
+    if web_dr is not None:
+        dr = web_dr
+    else:
+        dr_agent = DisasterRecoveryAgent(db)
+        dr = dr_agent.analyze(
+            {
+                "backups": [
+                    {"system": b.system, "status": b.status,
+                     "last_backup": b.last_backup.isoformat(),
+                     "rpo_minutes": b.rpo_minutes}
+                    for b in backup_rows
+                ],
+                "replication": [
+                    {"source": r.source, "target": r.target, "status": r.status,
+                     "lag_seconds": r.lag_seconds}
+                    for r in repl_rows
+                ],
+                "failovers": [
+                    {"service": f.service, "status": f.status,
+                     "last_tested": f.last_tested.isoformat() if f.last_tested else None}
+                    for f in failover_rows
+                ],
+            }
+        )
 
     recent_deployments = db.execute(
         select(Deployment).order_by(Deployment.timestamp.desc()).limit(8)

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agents.dr_agent import DisasterRecoveryAgent
+from app.agents.dr_agent import DisasterRecoveryAgent, website_dr_from_metrics
 from app.api.deps import get_current_user
 from app.db.models import (
     Backup,
@@ -27,6 +27,20 @@ def dr_status(db: Session = Depends(get_db), _: User = Depends(get_current_user)
     backups = db.execute(select(Backup)).scalars().all()
     replication = db.execute(select(ReplicationStatus)).scalars().all()
     failovers = db.execute(select(FailoverEvent)).scalars().all()
+
+    # If there's no infrastructure DR telemetry but a live website is connected,
+    # score DR from the website's REAL measured resilience signals (TLS, DNS
+    # redundancy, uptime) instead of returning the empty-data floor.
+    if not backups and not replication and not failovers:
+        web = website_dr_from_metrics(db)
+        if web is not None:
+            return DRStatusResponse(
+                dr_score=web["dr_score"],
+                readiness=web["readiness"],
+                backups=[],
+                replication=[],
+                failovers=[],
+            )
 
     # Reuse the DR agent to compute the readiness score from live telemetry.
     agent = DisasterRecoveryAgent(db)

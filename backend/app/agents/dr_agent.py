@@ -6,7 +6,7 @@ Output : {"dr_score": int, "readiness": str, ...}
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.agents.base import BaseAgent
 
@@ -109,3 +109,91 @@ class DisasterRecoveryAgent(BaseAgent):
         if score >= 40:
             return "at_risk"
         return "not_ready"
+
+
+# --------------------------------------------------------------------------- #
+# Website DR — computed from REAL externally-observable signals, no fabrication.
+# --------------------------------------------------------------------------- #
+def score_website_resilience(
+    tls_valid: bool, cert_days: Optional[float],
+    redundancy: Optional[float], uptime_pct: Optional[float],
+):
+    """Score a live website's disaster-readiness from measured facts only:
+    TLS certificate health, DNS endpoint redundancy, and observed uptime.
+    Returns (score, components)."""
+    # TLS pillar — a broken or expiring certificate is a real outage risk.
+    if not tls_valid:
+        tls = 30.0
+    elif cert_days is None or cert_days < 0:
+        tls = 70.0
+    elif cert_days < 7:
+        tls = 40.0
+    elif cert_days < 30:
+        tls = 75.0
+    else:
+        tls = 100.0
+
+    # Redundancy pillar — distinct resolved IPs == real failover capacity.
+    if not redundancy or redundancy <= 0:
+        red = 50.0
+    elif redundancy >= 3:
+        red = 100.0
+    elif redundancy >= 2:
+        red = 75.0
+    else:
+        red = 35.0  # single IP => single point of failure
+
+    up = 100.0 if uptime_pct is None else max(0.0, min(100.0, float(uptime_pct)))
+    score = round(0.30 * tls + 0.30 * red + 0.40 * up)
+    return score, {"tls": round(tls), "redundancy": round(red), "uptime": round(up)}
+
+
+def website_dr_from_metrics(db) -> Optional[Dict[str, Any]]:
+    """DR readiness for a connected website, from the REAL signals its probes
+    recorded (TLS validity/expiry, DNS redundancy, measured uptime). Returns
+    None when there is no website telemetry to score."""
+    from sqlalchemy import func, select
+
+    from app.db.models import ConnectedApp, InfrastructureMetric
+
+    has_site = db.scalar(
+        select(func.count(ConnectedApp.id)).where(
+            ConnectedApp.app_type == "website"
+        )
+    )
+    if not has_site:
+        return None
+
+    def _latest(metric_name: str):
+        return db.execute(
+            select(InfrastructureMetric.value)
+            .where(
+                InfrastructureMetric.source == "website",
+                InfrastructureMetric.metric_name == metric_name,
+            )
+            .order_by(InfrastructureMetric.timestamp.desc())
+            .limit(1)
+        ).scalar()
+
+    tls_valid = _latest("tls_valid")
+    cert_days = _latest("cert_days_to_expiry")
+    redundancy = _latest("endpoint_redundancy")
+    uptime = db.scalar(
+        select(func.avg(InfrastructureMetric.value)).where(
+            InfrastructureMetric.source == "website",
+            InfrastructureMetric.metric_name == "availability",
+        )
+    )
+    if tls_valid is None and redundancy is None and uptime is None:
+        return None
+
+    score, components = score_website_resilience(
+        bool(tls_valid) if tls_valid is not None else False,
+        cert_days, redundancy, uptime,
+    )
+    return {
+        "dr_score": score,
+        "readiness": DisasterRecoveryAgent._readiness(score),
+        "components": components,
+        "kind": "website",
+    }
