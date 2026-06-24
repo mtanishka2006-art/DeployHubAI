@@ -179,21 +179,27 @@ class WebsiteConnector(BaseConnector):
                             "metric_name": name, "value": sig[name],
                             "unit": unit, "ts": now})
 
-        # Incident-grade log when the site is unhealthy.
+        # Incident-grade log when the site is unhealthy. Each carries a STABLE
+        # signature ("sig") so recurring issues de-duplicate into one open
+        # incident instead of a new one every poll (the varying ms etc. stays in
+        # the message/description).
         if down:
             detail = error or f"HTTP {status_code}"
             records.append({
                 "kind": "log", "service": svc, "severity": "critical",
+                "sig": f"{svc} is down",
                 "message": f"{svc} is DOWN: {detail}", "ts": now,
             })
         elif client_err:
             records.append({
                 "kind": "log", "service": svc, "severity": "high",
+                "sig": f"{svc} HTTP {status_code}",
                 "message": f"{svc} returned HTTP {status_code}", "ts": now,
             })
         elif elapsed_ms > 1500:
             records.append({
                 "kind": "log", "service": svc, "severity": "high",
+                "sig": f"{svc} slow response",
                 "message": f"{svc} slow response: {elapsed_ms:.0f}ms", "ts": now,
             })
 
@@ -202,6 +208,7 @@ class WebsiteConnector(BaseConnector):
         if r is not None and not ssl_ok:
             records.append({
                 "kind": "log", "service": svc, "severity": "high",
+                "sig": f"{svc} TLS certificate invalid",
                 "message": f"{svc} TLS certificate verification failed "
                            f"(invalid or incomplete certificate chain)", "ts": now,
             })
@@ -214,7 +221,8 @@ class WebsiteConnector(BaseConnector):
                 source=self.source, event_type=EventType.LOG.value,
                 timestamp=raw.get("ts"), severity=raw.get("severity", "high"),
                 service=raw["service"], environment="prod",
-                metadata={"message": msg, "error_signature": msg[:60]},
+                metadata={"message": msg,
+                          "error_signature": raw.get("sig") or msg[:60]},
             )
         return UnifiedEvent(
             source=self.source, event_type=EventType.METRIC.value,

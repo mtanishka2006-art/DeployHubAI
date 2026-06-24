@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from sqlalchemy import select
+
 from app.db.models import Incident, InfrastructureMetric, Severity
 from app.memory.infrastructure_memory import get_memory
 from app.processing.base import BaseProcessor, json_safe
@@ -21,7 +23,11 @@ class LogProcessor(BaseProcessor):
     def extract_features(self, event: UnifiedEvent) -> Dict[str, Any]:
         md = dict(event.metadata)
         msg = md.get("message", "")
-        md["error_signature"] = self._signature(msg)
+        # Respect a connector-supplied (stable) signature; else derive one. A
+        # stable signature lets recurring alerts de-duplicate instead of piling
+        # up a new incident every poll.
+        if not md.get("error_signature"):
+            md["error_signature"] = self._signature(msg)
         md["is_error"] = event.severity in _INCIDENT_SEVERITIES
         return md
 
@@ -42,8 +48,24 @@ class LogProcessor(BaseProcessor):
             self.db.flush()
             return metric
 
+        title = f"{event.service}: {features.get('error_signature', 'error')}"
+
+        # De-duplicate: if the same issue is already an open incident on this
+        # service, don't create another one each poll — keep the existing one.
+        existing = self.db.execute(
+            select(Incident)
+            .where(
+                Incident.service == event.service,
+                Incident.title == title,
+                Incident.status.in_(["open", "investigating"]),
+            )
+            .limit(1)
+        ).scalars().first()
+        if existing is not None:
+            return existing
+
         incident = Incident(
-            title=f"{event.service}: {features.get('error_signature', 'error')}",
+            title=title,
             description=features.get("message", ""),
             severity=event.severity,
             service=event.service,
