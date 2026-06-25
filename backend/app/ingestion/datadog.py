@@ -56,28 +56,28 @@ class DatadogConnector(BaseConnector):
         if not self._has("api_key", "app_key"):
             return self.config.get("sample", [])
         records: List[Dict[str, Any]] = []
-        # Alerting monitors -> incidents
+        # Fetch ALL monitors: alerting/warn ones -> incidents; monitors back in
+        # OK state -> a resolve marker so a previously-opened incident closes.
         try:
             r = httpx.get(
                 f"{self._base()}/api/v1/monitor",
-                params={"group_states": "alert"},
                 headers=self._headers(),
                 timeout=15,
             )
             r.raise_for_status()
             for m in r.json():
                 state = (m.get("overall_state") or "").lower()
+                svc = (m.get("tags") or ["datadog"])[0] if m.get("tags") else "datadog"
+                name = m.get("name", "Datadog monitor")
                 if state in ("alert", "warn"):
-                    records.append(
-                        {
-                            "kind": "monitor",
-                            "name": m.get("name", "Datadog monitor"),
-                            "state": state,
-                            "service": (m.get("tags") or ["datadog"])[0]
-                            if m.get("tags") else "datadog",
-                            "message": m.get("message", ""),
-                        }
-                    )
+                    records.append({
+                        "kind": "monitor", "name": name, "state": state,
+                        "service": svc, "message": m.get("message", ""),
+                    })
+                elif state == "ok":
+                    records.append({
+                        "kind": "monitor_resolve", "name": name, "service": svc,
+                    })
         except Exception as exc:  # noqa: BLE001
             self.log.warning("Datadog monitor fetch failed: %s", exc)
 
@@ -128,8 +128,19 @@ class DatadogConnector(BaseConnector):
         return scope or "datadog-host"
 
     def normalize(self, raw: Dict[str, Any]) -> UnifiedEvent:
-        if raw.get("kind") == "monitor":
-            severity = "critical" if raw.get("state") == "alert" else "high"
+        if raw.get("kind") in ("monitor", "monitor_resolve"):
+            is_resolve = raw.get("kind") == "monitor_resolve"
+            severity = (
+                "info" if is_resolve
+                else ("critical" if raw.get("state") == "alert" else "high")
+            )
+            meta = {
+                "level": "info" if is_resolve else "error",
+                "message": raw.get("name", "Datadog monitor"),
+                "error_signature": str(raw.get("name", ""))[:60],
+            }
+            if is_resolve:
+                meta["resolve"] = True  # closes the matching open incident
             return UnifiedEvent(
                 source=self.source,
                 event_type=EventType.LOG.value,
@@ -137,11 +148,7 @@ class DatadogConnector(BaseConnector):
                 severity=severity,
                 environment="prod",
                 service=str(raw.get("service", "datadog")).replace("service:", ""),
-                metadata={
-                    "level": "error",
-                    "message": raw.get("name", "Datadog monitor alert"),
-                    "error_signature": str(raw.get("name", ""))[:60],
-                },
+                metadata=meta,
             )
         # Generic metric/event
         return UnifiedEvent(

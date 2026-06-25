@@ -212,17 +212,37 @@ class WebsiteConnector(BaseConnector):
                 "message": f"{svc} TLS certificate verification failed "
                            f"(invalid or incomplete certificate chain)", "ts": now,
             })
+
+        # Recovery markers: for each check that is currently HEALTHY, emit a
+        # resolve signal so its open incident (if any) auto-closes. These only
+        # fire when the check genuinely passed this poll, and never appear in
+        # the logs feed (they're internal signals).
+        healthy_sigs: List[str] = []
+        if not down:
+            healthy_sigs.append(f"{svc} is down")
+        if not down and elapsed_ms <= 1500:
+            healthy_sigs.append(f"{svc} slow response")
+        if ssl_ok:
+            healthy_sigs.append(f"{svc} TLS certificate invalid")
+        for sig in healthy_sigs:
+            records.append({
+                "kind": "log", "service": svc, "severity": "info",
+                "resolve": True, "sig": sig, "ts": now,
+                "message": f"{svc} recovered: {sig}",
+            })
         return records
 
     def normalize(self, raw: Dict[str, Any]) -> UnifiedEvent:
         if raw.get("kind") == "log":
             msg = raw.get("message", "")
+            meta = {"message": msg, "error_signature": raw.get("sig") or msg[:60]}
+            if raw.get("resolve"):
+                meta["resolve"] = True
             return UnifiedEvent(
                 source=self.source, event_type=EventType.LOG.value,
                 timestamp=raw.get("ts"), severity=raw.get("severity", "high"),
                 service=raw["service"], environment="prod",
-                metadata={"message": msg,
-                          "error_signature": raw.get("sig") or msg[:60]},
+                metadata=meta,
             )
         return UnifiedEvent(
             source=self.source, event_type=EventType.METRIC.value,

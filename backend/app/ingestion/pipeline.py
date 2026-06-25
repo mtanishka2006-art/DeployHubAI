@@ -68,7 +68,9 @@ def ingest_events(
         try:
             processor = _processor_for(event.event_type, db)
             processor.process(event)
-            if connected_app is not None:
+            # Recovery markers (metadata.resolve) are internal signals that
+            # close incidents — don't record them in the connector/log feed.
+            if connected_app is not None and not (event.metadata or {}).get("resolve"):
                 db.add(
                     ConnectorEvent(
                         connected_app_id=connected_app.id,

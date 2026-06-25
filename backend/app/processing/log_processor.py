@@ -32,6 +32,12 @@ class LogProcessor(BaseProcessor):
         return md
 
     def persist(self, event: UnifiedEvent, features: Dict[str, Any]):
+        # Recovery signal: a connector reports a check is healthy again. Close
+        # the matching OPEN incident instead of creating anything. This only
+        # fires when the connector genuinely observed the issue clear.
+        if features.get("resolve"):
+            return self._resolve_incident(event, features)
+
         if not features.get("is_error"):
             # Track log volume as a metric for the monitoring agent.
             metric = InfrastructureMetric(
@@ -77,6 +83,24 @@ class LogProcessor(BaseProcessor):
         self.db.add(incident)
         self.db.flush()
         return incident
+
+    def _resolve_incident(self, event: UnifiedEvent, features: Dict[str, Any]):
+        """Close the open incident matching this service + signature, if any."""
+        title = f"{event.service}: {features.get('error_signature', 'error')}"
+        inc = self.db.execute(
+            select(Incident)
+            .where(
+                Incident.service == event.service,
+                Incident.title == title,
+                Incident.status.in_(["open", "investigating"]),
+            )
+            .limit(1)
+        ).scalars().first()
+        if inc is not None:
+            inc.status = "resolved"
+            inc.resolved_at = event.timestamp
+            self.db.flush()
+        return inc
 
     def embed(self, event: UnifiedEvent, persisted) -> None:
         if isinstance(persisted, Incident):

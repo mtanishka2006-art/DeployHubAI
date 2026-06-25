@@ -386,29 +386,29 @@ def _incident_severity(title: str) -> str:
 
 
 def _grade_and_resolve_incidents(db: Session, source: str) -> None:
-    """Post-process the import's incidents: set a realistic severity per commit
-    type, and auto-resolve any incident that a later commit on the SAME service
-    superseded (only the most recent incident per service stays active).
+    """Post-process the import's incidents with proper open/resolved analysis.
+
+    Git history is retrospective: a `fix:` commit *is* the resolution, so those
+    incidents are marked RESOLVED (resolved_at = the commit time). A `revert`
+    commit means a change was rolled back — the underlying problem is typically
+    NOT actually fixed yet — so those stay OPEN. Severity is graded by type.
     """
     incidents = db.execute(
-        select(Incident)
-        .where(Incident.source == source)
-        .order_by(Incident.detected_at.desc())
+        select(Incident).where(Incident.source == source)
     ).scalars().all()
 
-    active_services: set = set()  # services whose newest incident we keep open
-    for inc in incidents:  # newest first
+    for inc in incidents:
+        text = (inc.title or "").lower()
         inc.severity = _incident_severity(inc.title)
-        if inc.service not in active_services:
-            # Newest incident for this service — still an open issue.
-            active_services.add(inc.service)
+        if "revert" in text:
+            # Rolled back -> the real fix is still pending; genuinely open.
             inc.status = "open"
+            inc.resolved_at = None
         else:
-            # An older incident on a service that was fixed again later →
-            # treat it as resolved by the subsequent fix.
+            # A fix/patch commit already resolved the bug it addressed.
             inc.status = "resolved"
             if inc.resolved_at is None:
-                inc.resolved_at = inc.detected_at + timedelta(hours=4)
+                inc.resolved_at = inc.detected_at
     db.commit()
 
 
