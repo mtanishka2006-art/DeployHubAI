@@ -1,9 +1,11 @@
-"""Datadog connector — ingests events and alerting monitors.
+"""Datadog connector — ingests alerting monitors and host metrics.
 
-Monitors in an Alert state become incidents; events become metric/log signal.
+Monitors in an Alert state become incidents; host metrics (CPU, memory, …)
+become metric events so the host shows up as a service with live health.
 """
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Tuple
 
@@ -11,6 +13,13 @@ import httpx
 
 from app.ingestion.base import BaseConnector
 from app.schemas.events import EventType, UnifiedEvent
+
+# Host metrics to pull as live telemetry (metric query -> unit shown in DeployHub).
+_METRICS = [
+    ("avg:system.cpu.user{*}by{host}", "system.cpu.user", "Percent"),
+    ("avg:system.mem.used{*}by{host}", "system.mem.used", "Bytes"),
+    ("avg:system.load.1{*}by{host}", "system.load.1", "Count"),
+]
 
 
 class DatadogConnector(BaseConnector):
@@ -71,7 +80,52 @@ class DatadogConnector(BaseConnector):
                     )
         except Exception as exc:  # noqa: BLE001
             self.log.warning("Datadog monitor fetch failed: %s", exc)
+
+        # Host metrics -> metric events (so the host appears as a service).
+        records.extend(self._fetch_metrics())
         return records
+
+    def _fetch_metrics(self) -> List[Dict[str, Any]]:
+        """Pull the latest value per host for a few key system metrics via the
+        Datadog timeseries query API."""
+        out: List[Dict[str, Any]] = []
+        now = int(time.time())
+        frm = now - 600  # last 10 minutes
+        for query, metric_name, unit in _METRICS:
+            try:
+                r = httpx.get(
+                    f"{self._base()}/api/v1/query",
+                    params={"from": frm, "to": now, "query": query},
+                    headers=self._headers(),
+                    timeout=15,
+                )
+                r.raise_for_status()
+                series = r.json().get("series", []) or []
+            except Exception as exc:  # noqa: BLE001
+                self.log.warning("Datadog metric '%s' fetch failed: %s", metric_name, exc)
+                continue
+            for s in series:
+                points = [p for p in (s.get("pointlist") or []) if p and p[1] is not None]
+                if not points:
+                    continue
+                host = self._host_from_scope(s.get("scope", ""))
+                out.append({
+                    "stream": "metric",
+                    "service": host,
+                    "metric_name": metric_name,
+                    "value": float(points[-1][1]),  # most recent point
+                    "unit": unit,
+                })
+        return out
+
+    @staticmethod
+    def _host_from_scope(scope: str) -> str:
+        """Datadog series scope looks like 'host:LAPTOP-XYZ' — extract the host."""
+        for part in (scope or "").split(","):
+            part = part.strip()
+            if part.startswith("host:"):
+                return part[len("host:"):] or "datadog-host"
+        return scope or "datadog-host"
 
     def normalize(self, raw: Dict[str, Any]) -> UnifiedEvent:
         if raw.get("kind") == "monitor":
