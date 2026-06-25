@@ -41,6 +41,16 @@ def dr_status(db: Session = Depends(get_db), _: User = Depends(get_current_user)
                 replication=[],
                 failovers=[],
             )
+        # No DR telemetry at all and no website to derive from (e.g. a Datadog-
+        # only setup) — DR isn't measurable, so report it honestly as N/A
+        # instead of the misleading empty-data floor score.
+        return DRStatusResponse(
+            dr_score=None,
+            readiness="not_measured",
+            backups=[],
+            replication=[],
+            failovers=[],
+        )
 
     # Reuse the DR agent to compute the readiness score from live telemetry.
     agent = DisasterRecoveryAgent(db)

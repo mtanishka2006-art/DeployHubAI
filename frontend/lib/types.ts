@@ -45,7 +45,7 @@ export interface Overview {
   system_health: { status: string; score: number };
   active_incidents: number;
   recovery_success_rate: number;
-  dr_readiness: { score: number; readiness: string };
+  dr_readiness: { score: number | null; readiness: string };
   recent_deployments: Deployment[];
   incident_timeline: IncidentTimelineItem[];
   health_by_service: HealthByService[];
@@ -118,7 +118,7 @@ export interface DrFailover {
 }
 
 export interface DrStatus {
-  dr_score: number;
+  dr_score: number | null;
   readiness: string;
   backups: DrBackup[];
   replication: DrReplication[];

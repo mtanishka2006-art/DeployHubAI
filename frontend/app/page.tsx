@@ -152,10 +152,25 @@ export default function OverviewPage() {
               />
               <Stat
                 label="DR Readiness"
-                value={Math.round(data.dr_readiness.score)}
-                sub={data.dr_readiness.readiness}
+                value={
+                  data.dr_readiness.readiness === "not_measured" ||
+                  data.dr_readiness.score == null
+                    ? "N/A"
+                    : Math.round(data.dr_readiness.score)
+                }
+                sub={
+                  data.dr_readiness.readiness === "not_measured" ||
+                  data.dr_readiness.score == null
+                    ? "No DR signals from this source (needs backup/replication/failover)"
+                    : data.dr_readiness.readiness
+                }
                 icon={<ShieldCheck className="h-5 w-5" />}
-                accent="text-sky-400"
+                accent={
+                  data.dr_readiness.readiness === "not_measured" ||
+                  data.dr_readiness.score == null
+                    ? "text-muted-foreground"
+                    : "text-sky-400"
+                }
               />
 
               {/* Health by service */}

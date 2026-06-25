@@ -129,7 +129,7 @@ class FailoverOut(BaseModel):
 
 
 class DRStatusResponse(BaseModel):
-    dr_score: int
+    dr_score: Optional[int] = None  # None => not measurable (no DR data source)
     readiness: str
     backups: List[BackupOut]
     replication: List[ReplicationOut]
@@ -277,7 +277,7 @@ class SystemHealth(BaseModel):
 
 
 class DRReadiness(BaseModel):
-    score: int
+    score: Optional[int] = None  # None => not measurable from the connected source
     readiness: str
 
 

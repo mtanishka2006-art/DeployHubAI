@@ -123,13 +123,17 @@ def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user))
     failover_rows = db.execute(select(FailoverEvent)).scalars().all()
 
     web_dr = None
-    if not backup_rows and not repl_rows and not failover_rows:
+    no_infra_dr = not backup_rows and not repl_rows and not failover_rows
+    if no_infra_dr:
         # No infra DR telemetry — score a connected website from its real
         # measured resilience signals (TLS, DNS redundancy, uptime).
         web_dr = website_dr_from_metrics(db)
 
     if web_dr is not None:
         dr = web_dr
+    elif no_infra_dr:
+        # No DR data and no website (e.g. Datadog-only) — DR isn't measurable.
+        dr = {"dr_score": None, "readiness": "not_measured"}
     else:
         dr_agent = DisasterRecoveryAgent(db)
         dr = dr_agent.analyze(

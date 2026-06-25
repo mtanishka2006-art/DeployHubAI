@@ -85,13 +85,28 @@ export default function DisasterRecoveryPage() {
                 <CardTitle>DR Readiness</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center">
-                <Gauge value={status.dr_score} label="readiness" />
-                <Badge
-                  variant={statusVariant(status.readiness)}
-                  className="mt-3 capitalize"
-                >
-                  {status.readiness}
-                </Badge>
+                {status.dr_score == null ||
+                status.readiness === "not_measured" ? (
+                  <div className="flex flex-col items-center py-6 text-center">
+                    <span className="text-3xl font-bold text-muted-foreground">
+                      N/A
+                    </span>
+                    <p className="mt-2 max-w-[15rem] text-xs text-muted-foreground">
+                      DR readiness needs backup / replication / failover data —
+                      the connected source doesn’t provide it.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <Gauge value={status.dr_score} label="readiness" />
+                    <Badge
+                      variant={statusVariant(status.readiness)}
+                      className="mt-3 capitalize"
+                    >
+                      {status.readiness}
+                    </Badge>
+                  </>
+                )}
               </CardContent>
             </Card>
 
