@@ -306,9 +306,9 @@ class ConnectedApp(Base, TimestampMixin):
     events_ingested: Mapped[int] = mapped_column(Integer, default=0)
     created_by: Mapped[str] = mapped_column(String(120), default="")
 
-    events: Mapped[list["ConnectorEvent"]] = relationship(
-        back_populates="app", cascade="all, delete-orphan"
-    )
+    # NOTE: no delete cascade — connector events are a permanent, append-only
+    # log history that must survive disconnect / replace (Logs page shows all).
+    events: Mapped[list["ConnectorEvent"]] = relationship(back_populates="app")
 
 
 class ConnectorEvent(Base, TimestampMixin):

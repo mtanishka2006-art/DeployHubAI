@@ -406,10 +406,12 @@ def reset_platform_data(db: Session) -> None:
     Used when importing a project in 'replace' mode so the dashboards reflect
     ONLY the uploaded application. Deletes child rows before parents to stay
     safe regardless of FK cascade support (e.g. SQLite).
+
+    ConnectorEvent rows are intentionally NOT cleared: the Logs page is a
+    permanent, append-only history that must survive replace / reconnect.
     """
     for model in (
         Pipeline,
-        ConnectorEvent,
         ConnectedApp,
         RecoveryAction,
         AgentOutput,
