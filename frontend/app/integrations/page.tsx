@@ -499,10 +499,10 @@ function ConnectModal({
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const isGitRepo = connector.app_type === "git_repo";
-  // Any live source can be connected in "focus" mode — replacing prior data so
-  // the dashboards reflect ONLY this source (defaults on). Uncheck to merge it
-  // alongside existing data instead.
-  const canReplace = connector.live_supported;
+  // Every source can be connected in "focus" mode — replacing prior data so the
+  // dashboards reflect ONLY this source (defaults on). Uncheck to merge it
+  // alongside existing data instead, so different sources don't overlap.
+  const canReplace = true;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
