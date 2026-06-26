@@ -56,18 +56,24 @@ class LogProcessor(BaseProcessor):
 
         title = f"{event.service}: {features.get('error_signature', 'error')}"
 
-        # De-duplicate: if the same issue is already an open incident on this
-        # service, don't create another one each poll — keep the existing one.
+        # Reuse the existing incident for this issue (regardless of status) so a
+        # recurring/flapping problem toggles ONE incident instead of spawning a
+        # new row each time. If it was resolved and recurs, re-open the same row.
         existing = self.db.execute(
             select(Incident)
             .where(
                 Incident.service == event.service,
                 Incident.title == title,
-                Incident.status.in_(["open", "investigating"]),
             )
+            .order_by(Incident.detected_at.desc())
             .limit(1)
         ).scalars().first()
         if existing is not None:
+            if existing.status == "resolved":
+                existing.status = "open"
+                existing.resolved_at = None
+                existing.detected_at = event.timestamp  # latest occurrence
+                self.db.flush()
             return existing
 
         incident = Incident(
