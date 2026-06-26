@@ -41,6 +41,7 @@ class GithubActionsConnector(BaseConnector):
                 f"{_API}/repos/{owner}/{repo}",
                 headers=_headers(token),
                 timeout=10,
+                follow_redirects=True,
             )
         except httpx.HTTPError as exc:
             return False, f"network error: {exc}"
@@ -63,7 +64,8 @@ class GithubActionsConnector(BaseConnector):
         token = self.config.get("token", "")
         url = f"{_API}/repos/{owner}/{repo}/actions/runs?per_page=20"
         try:
-            r = httpx.get(url, headers=_headers(token), timeout=15)
+            r = httpx.get(url, headers=_headers(token), timeout=15,
+                          follow_redirects=True)
             r.raise_for_status()
             runs = r.json().get("workflow_runs", [])
         except Exception as exc:  # noqa: BLE001
@@ -106,7 +108,7 @@ class GithubActionsConnector(BaseConnector):
         try:
             r = httpx.get(
                 f"{_API}/repos/{owner}/{repo}/actions/workflows",
-                headers=_headers(token), timeout=15,
+                headers=_headers(token), timeout=15, follow_redirects=True,
             )
             r.raise_for_status()
             wfs = r.json().get("workflows", [])
