@@ -6,7 +6,7 @@ no credentials it falls back to ``config['sample']`` so seeding/tests still work
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 import httpx
 
@@ -69,8 +69,11 @@ class GithubActionsConnector(BaseConnector):
         except Exception as exc:  # noqa: BLE001
             self.log.warning("GitHub fetch failed: %s", exc)
             return []
-        return [
-            {
+
+        records: List[Dict[str, Any]] = []
+        latest_by_wf: Dict[str, Dict[str, Any]] = {}
+        for run in runs:  # the API returns newest first
+            rec = {
                 "repository": repo,
                 "workflow": run.get("name"),
                 "conclusion": run.get("conclusion") or "in_progress",
@@ -79,11 +82,70 @@ class GithubActionsConnector(BaseConnector):
                 "run_number": str(run.get("run_number", "")),
                 "created_at": run.get("run_started_at") or run.get("created_at"),
                 "environment": "prod",
+                "kind": "deployment",
             }
-            for run in runs
+            records.append(rec)
+            latest_by_wf.setdefault(rec["workflow"] or "workflow", rec)
+
+        # The LATEST run per workflow decides incident state: a failing latest
+        # run opens an incident; a passing one resolves the open incident.
+        for rec in latest_by_wf.values():
+            concl = (rec.get("conclusion") or "").lower()
+            if concl == "failure":
+                records.append({**rec, "kind": "incident"})
+            elif concl == "success":
+                records.append({**rec, "kind": "resolve"})
+        return records
+
+    def fetch_workflows(self) -> List[Dict[str, str]]:
+        """List the repo's GitHub Actions workflow definitions (for Pipelines)."""
+        if not self._has("owner", "repo"):
+            return []
+        owner, repo = self.config["owner"], self.config["repo"]
+        token = self.config.get("token", "")
+        try:
+            r = httpx.get(
+                f"{_API}/repos/{owner}/{repo}/actions/workflows",
+                headers=_headers(token), timeout=15,
+            )
+            r.raise_for_status()
+            wfs = r.json().get("workflows", [])
+        except Exception as exc:  # noqa: BLE001
+            self.log.warning("GitHub workflows fetch failed: %s", exc)
+            return []
+        return [
+            {"name": w.get("name") or w.get("path", "workflow"),
+             "path": w.get("path", ""), "state": w.get("state", "active")}
+            for w in wfs
         ]
 
     def normalize(self, raw: Dict[str, Any]) -> UnifiedEvent:
+        kind = raw.get("kind", "deployment")
+        ts = raw.get("created_at") or datetime.now(timezone.utc)
+        repo = raw.get("repository", raw.get("workflow", "unknown"))
+        wf = raw.get("workflow", "") or "workflow"
+        sig = f"workflow '{wf}' failing"
+
+        if kind == "incident":
+            desc = (
+                f"GitHub Actions workflow '{wf}' run #{raw.get('run_number', '?')} "
+                f"FAILED on {repo} (commit {(raw.get('head_sha', '') or '')[:8]}, "
+                f"by {raw.get('actor', '') or 'unknown'})."
+            )
+            return UnifiedEvent(
+                source=self.source, event_type=EventType.LOG.value, timestamp=ts,
+                severity="high", environment="prod", service=repo,
+                metadata={"level": "error", "message": desc,
+                          "error_signature": sig},
+            )
+        if kind == "resolve":
+            return UnifiedEvent(
+                source=self.source, event_type=EventType.LOG.value, timestamp=ts,
+                severity="info", environment="prod", service=repo,
+                metadata={"message": f"workflow '{wf}' recovered (latest run passed)",
+                          "error_signature": sig, "resolve": True},
+            )
+
         conclusion = (raw.get("conclusion") or "success").lower()
         status = {
             "success": "success",
@@ -93,16 +155,16 @@ class GithubActionsConnector(BaseConnector):
         return UnifiedEvent(
             source=self.source,
             event_type=EventType.DEPLOYMENT.value,
-            timestamp=raw.get("created_at") or datetime.now(timezone.utc),
+            timestamp=ts,
             severity="high" if status == "failed" else "info",
             environment=raw.get("environment", "prod"),
-            service=raw.get("repository", raw.get("workflow", "unknown")),
+            service=repo,
             metadata={
                 "status": status,
                 "actor": raw.get("actor", ""),
                 "commit": (raw.get("head_sha", "") or "")[:12],
                 "version": raw.get("run_number", ""),
                 "duration_seconds": raw.get("duration_seconds", 0),
-                "workflow": raw.get("workflow", ""),
+                "workflow": wf,
             },
         )

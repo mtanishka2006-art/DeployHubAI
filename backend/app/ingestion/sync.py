@@ -43,6 +43,30 @@ def sync_connected_app(db: Session, app: ConnectedApp) -> Tuple[int, bool, str]:
         connector = get_connector(entry["source"], creds)
         events = connector.collect()
         count = ingest_events(db, events, connected_app=app)
+
+        # One-time pipeline detection for connectors that can list them (e.g.
+        # GitHub Actions). Done once (when none exist yet) to avoid hammering
+        # the API every poll / hitting rate limits.
+        if hasattr(connector, "fetch_workflows"):
+            from app.db.models import Pipeline
+
+            has_pipes = (
+                db.query(Pipeline).filter(Pipeline.connected_app_id == app.id).count()
+            )
+            if not has_pipes:
+                for w in connector.fetch_workflows():
+                    db.add(
+                        Pipeline(
+                            connected_app_id=app.id,
+                            provider="github_actions",
+                            name=w.get("name", "workflow"),
+                            file_path=w.get("path", ""),
+                            triggers=[],
+                            stages=[],
+                            status=w.get("state", "active"),
+                        )
+                    )
+
         app.status = "connected"
         app.last_error = ""
         db.commit()
