@@ -59,6 +59,13 @@ def connect(
         raise HTTPException(status_code=400, detail=f"Unknown app_type '{payload.app_type}'")
     entry = get_catalog_entry(payload.app_type)
 
+    # Connecting any real source removes the simulated demo seed so every
+    # section (Health by Service, Incidents, Deployments, DR) reflects only
+    # real source data. Other real connectors' data is preserved (merge).
+    from app.seed.seed_data import clear_seed_data
+
+    clear_seed_data(db)
+
     # Git repository: clone + analyze commit history (handled specially).
     if payload.app_type == "git_repo":
         repo_url = payload.credentials.get("repo_url", "")
@@ -145,6 +152,10 @@ async def import_project(
     data = await file.read()
     if len(data) > _MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File too large (max 200 MB)")
+    # Importing a project also removes the simulated demo seed.
+    from app.seed.seed_data import clear_seed_data
+
+    clear_seed_data(db)
     try:
         result = import_project_zip(db, data, user.username, replace=replace)
     except ValueError as exc:

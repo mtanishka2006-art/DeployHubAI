@@ -495,7 +495,9 @@ function ConnectModal({
   const [creds, setCreds] = React.useState<Record<string, string>>({});
   const [name, setName] = React.useState(connector.label);
   const [interval, setIntervalSecs] = React.useState(60);
-  const [replace, setReplace] = React.useState(true);
+  // Default to MERGE so multiple integrations can be plugged in for one app and
+  // their metrics show together. Check it for focus mode (show only this source).
+  const [replace, setReplace] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const isGitRepo = connector.app_type === "git_repo";

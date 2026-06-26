@@ -435,6 +435,35 @@ def reset_platform_data(db: Session) -> None:
     logger.info("platform data reset (operational tables + memory cleared)")
 
 
+def clear_seed_data(db: Session) -> None:
+    """Surgically remove ONLY the simulated demo-seed data — its services,
+    metrics, incidents, deployments and DR rows — so that once a real source is
+    connected, no demo data remains in any section (Health by Service,
+    Incidents, Deployments, DR). Real connector data and git-import-derived data
+    are left untouched (they use different service names / DR identifiers).
+    """
+    for model in (InfrastructureMetric, Incident, Deployment):
+        db.query(model).filter(model.service.in_(SERVICES)).delete(
+            synchronize_session=False
+        )
+    db.query(Backup).filter(
+        Backup.system.in_(["rds-snapshot", "s3-object-backup", "velero-k8s"])
+    ).delete(synchronize_session=False)
+    db.query(ReplicationStatus).filter(
+        ReplicationStatus.source.in_(["postgres-primary", "aws:us-east-1"])
+    ).delete(synchronize_session=False)
+    db.query(FailoverEvent).filter(
+        FailoverEvent.service.in_(
+            ["postgres-primary", "k8s:prod-east", "notification-service"]
+        )
+    ).delete(synchronize_session=False)
+    # The DR event log + historical-incident corpus are entirely seed-generated.
+    db.query(DisasterRecoveryEvent).delete(synchronize_session=False)
+    db.query(HistoricalIncident).delete(synchronize_session=False)
+    db.commit()
+    logger.info("cleared demo seed data (real sources retained)")
+
+
 def has_real_data(db: Session) -> bool:
     """True once the user has connected/imported a real source."""
     return db.query(ConnectedApp).count() > 0
