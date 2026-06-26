@@ -50,30 +50,6 @@ CONNECTOR_CATALOG: List[Dict[str, Any]] = [
         ],
     },
     {
-        "app_type": "jira",
-        "label": "Jira",
-        "description": "Import issues labelled incident/outage as incidents.",
-        "icon": "jira",
-        "source": "jira",
-        "live_supported": True,
-        "fields": [
-            _field("domain", "Jira domain", placeholder="yourco.atlassian.net"),
-            _field("email", "Account email", placeholder="you@company.com"),
-            _field("api_token", "API token", secret=True),
-        ],
-    },
-    {
-        "app_type": "pagerduty",
-        "label": "PagerDuty",
-        "description": "Pull triggered/acknowledged incidents.",
-        "icon": "pagerduty",
-        "source": "pagerduty",
-        "live_supported": True,
-        "fields": [
-            _field("api_token", "REST API token", secret=True),
-        ],
-    },
-    {
         "app_type": "datadog",
         "label": "Datadog",
         "description": "Ingest Datadog events and monitor alerts.",
@@ -84,18 +60,6 @@ CONNECTOR_CATALOG: List[Dict[str, Any]] = [
             _field("api_key", "API key", secret=True),
             _field("app_key", "Application key", secret=True),
             _field("site", "Site", placeholder="datadoghq.com", required=False),
-        ],
-    },
-    {
-        "app_type": "kubernetes",
-        "label": "Kubernetes",
-        "description": "Cluster events & pod health (kubeconfig required).",
-        "icon": "kubernetes",
-        "source": "kubernetes",
-        "live_supported": False,  # needs in-cluster/kubeconfig wiring
-        "fields": [
-            _field("kubeconfig", "Kubeconfig (paste)", secret=True,
-                   required=False),
         ],
     },
     {
