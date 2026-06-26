@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ScrollText, RefreshCw, Search } from "lucide-react";
-import { getLogs, getLogServices } from "@/lib/api";
+import { getLogs, getLogServices, getLogSources } from "@/lib/api";
 import type { LogEntry } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,10 +25,12 @@ const SEVERITIES = ["all", "critical", "high", "medium", "low", "info"];
 export default function LogsPage() {
   const [logs, setLogs] = React.useState<LogEntry[]>([]);
   const [services, setServices] = React.useState<string[]>([]);
+  const [sources, setSources] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [severity, setSeverity] = React.useState("all");
   const [service, setService] = React.useState("all");
+  const [source, setSource] = React.useState("all");
   const [search, setSearch] = React.useState("");
 
   const load = React.useCallback(async () => {
@@ -36,11 +38,13 @@ export default function LogsPage() {
     setError(null);
     try {
       const params: {
+        source?: string;
         service?: string;
         severity?: string;
         q?: string;
         limit: number;
       } = { limit: 500 };
+      if (source !== "all") params.source = source;
       if (severity !== "all") params.severity = severity;
       if (service !== "all") params.service = service;
       if (search.trim()) params.q = search.trim();
@@ -50,18 +54,26 @@ export default function LogsPage() {
     } finally {
       setLoading(false);
     }
-  }, [severity, service, search]);
+  }, [source, severity, service, search]);
 
   React.useEffect(() => {
     load();
   }, [load]);
 
-  // Load the service filter options once.
+  // Load the source list once.
   React.useEffect(() => {
-    getLogServices()
+    getLogSources()
+      .then(setSources)
+      .catch(() => setSources([]));
+  }, []);
+
+  // Services are scoped to the selected source; refetch + reset when it changes.
+  React.useEffect(() => {
+    setService("all");
+    getLogServices(source === "all" ? undefined : source)
       .then(setServices)
       .catch(() => setServices([]));
-  }, []);
+  }, [source]);
 
   return (
     <div>
@@ -87,6 +99,16 @@ export default function LogsPage() {
             placeholder="Search log messages…"
             className="pl-9"
           />
+        </div>
+        <div className="w-44">
+          <Select value={source} onChange={(e) => setSource(e.target.value)}>
+            <option value="all">All sources</option>
+            {sources.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
         </div>
         <div className="w-40">
           <Select value={service} onChange={(e) => setService(e.target.value)}>

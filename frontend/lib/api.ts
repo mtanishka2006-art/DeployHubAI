@@ -205,6 +205,7 @@ export function getDrEvents(params?: { limit?: number }): Promise<DrEvent[]> {
 
 // ---- Logs ----
 export function getLogs(params?: {
+  source?: string;
   service?: string;
   severity?: string;
   q?: string;
@@ -213,8 +214,14 @@ export function getLogs(params?: {
   return request<LogEntry[]>("/logs", { query: params });
 }
 
-export function getLogServices(): Promise<string[]> {
-  return request<string[]>("/logs/services");
+export function getLogServices(source?: string): Promise<string[]> {
+  return request<string[]>("/logs/services", {
+    query: source ? { source } : undefined,
+  });
+}
+
+export function getLogSources(): Promise<string[]> {
+  return request<string[]>("/logs/sources");
 }
 
 // ---- Memory ----
