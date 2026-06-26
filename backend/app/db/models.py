@@ -308,7 +308,11 @@ class ConnectedApp(Base, TimestampMixin):
 
     # NOTE: no delete cascade — connector events are a permanent, append-only
     # log history that must survive disconnect / replace (Logs page shows all).
-    events: Mapped[list["ConnectorEvent"]] = relationship(back_populates="app")
+    # passive_deletes stops SQLAlchemy from nulling connected_app_id (a NOT NULL
+    # column) when the app is deleted; the events simply remain as history.
+    events: Mapped[list["ConnectorEvent"]] = relationship(
+        back_populates="app", passive_deletes="all"
+    )
 
 
 class ConnectorEvent(Base, TimestampMixin):
