@@ -54,13 +54,25 @@ def sync_connected_app(db: Session, app: ConnectedApp) -> Tuple[int, bool, str]:
                 db.query(Pipeline).filter(Pipeline.connected_app_id == app.id).count()
             )
             if not has_pipes:
+                # De-dup defensively: a (file_path, name) may already exist if a
+                # prior sync raced, so only insert workflows we don't have yet.
+                existing = {
+                    (fp, nm)
+                    for (fp, nm) in db.query(Pipeline.file_path, Pipeline.name)
+                    .filter(Pipeline.connected_app_id == app.id)
+                    .all()
+                }
                 for w in connector.fetch_workflows():
+                    key = (w.get("path", ""), w.get("name", "workflow"))
+                    if key in existing:
+                        continue
+                    existing.add(key)
                     db.add(
                         Pipeline(
                             connected_app_id=app.id,
                             provider="github_actions",
-                            name=w.get("name", "workflow"),
-                            file_path=w.get("path", ""),
+                            name=key[1],
+                            file_path=key[0],
                             triggers=[],
                             stages=[],
                             status=w.get("state", "active"),
