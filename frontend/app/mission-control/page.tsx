@@ -16,8 +16,22 @@ import {
   runMissionControl,
   getMissionControlReports,
   getServices,
+  getIncidents,
 } from "@/lib/api";
-import type { MissionControlReport, RecommendedAction } from "@/lib/types";
+import type {
+  MissionControlReport,
+  RecommendedAction,
+  Incident,
+} from "@/lib/types";
+
+// Order incidents by adversity: most severe first.
+const SEVERITY_RANK: Record<string, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+  info: 4,
+};
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge, severityVariant, statusVariant } from "@/components/ui/badge";
@@ -43,6 +57,8 @@ export default function MissionControlPage() {
   );
   const [services, setServices] = React.useState<string[]>([]);
   const [service, setService] = React.useState("");
+  const [incidents, setIncidents] = React.useState<Incident[]>([]);
+  const [incidentId, setIncidentId] = React.useState<string>("");
   const [running, setRunning] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [report, setReport] = React.useState<MissionControlReport | null>(null);
@@ -65,6 +81,17 @@ export default function MissionControlPage() {
         setService((cur) => cur || s[0] || "");
       })
       .catch(() => {});
+    // Incidents for the dropdown, ordered by severity (most adverse first).
+    getIncidents({ limit: 100 })
+      .then((list) => {
+        const sorted = [...list].sort(
+          (a, b) =>
+            (SEVERITY_RANK[(a.severity || "").toLowerCase()] ?? 9) -
+            (SEVERITY_RANK[(b.severity || "").toLowerCase()] ?? 9)
+        );
+        setIncidents(sorted);
+      })
+      .catch(() => {});
   }, [loadReports]);
 
   const run = async (e: React.FormEvent) => {
@@ -73,6 +100,7 @@ export default function MissionControlPage() {
     setError(null);
     try {
       const r = await runMissionControl({
+        incident_id: incidentId ? Number(incidentId) : undefined,
         description,
         service,
         environment: "prod",
@@ -105,6 +133,30 @@ export default function MissionControlPage() {
             </CardHeader>
             <CardContent>
               <form onSubmit={run} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Incident (ordered by severity)
+                  </label>
+                  <Select
+                    value={incidentId}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      setIncidentId(id);
+                      const inc = incidents.find((i) => String(i.id) === id);
+                      if (inc) {
+                        setDescription(inc.title);
+                        if (inc.service) setService(inc.service);
+                      }
+                    }}
+                  >
+                    <option value="">— Manual (describe below) —</option>
+                    {incidents.map((i) => (
+                      <option key={i.id} value={String(i.id)}>
+                        [{i.severity}] {i.title}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-muted-foreground">
                     Incident description
