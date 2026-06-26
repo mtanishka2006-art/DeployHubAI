@@ -28,22 +28,22 @@ def dr_status(db: Session = Depends(get_db), _: User = Depends(get_current_user)
     replication = db.execute(select(ReplicationStatus)).scalars().all()
     failovers = db.execute(select(FailoverEvent)).scalars().all()
 
-    # If there's no infrastructure DR telemetry but a live website is connected,
-    # score DR from the website's REAL measured resilience signals (TLS, DNS
-    # redundancy, uptime) instead of returning the empty-data floor.
+    # A connected live website's REAL measured resilience (TLS, DNS redundancy,
+    # uptime) takes precedence — it reflects the live monitored app, not any
+    # leftover demo/seed DR rows that may still be present in merge mode.
+    web = website_dr_from_metrics(db)
+    if web is not None:
+        return DRStatusResponse(
+            dr_score=web["dr_score"],
+            readiness=web["readiness"],
+            backups=[],
+            replication=[],
+            failovers=[],
+        )
+
+    # No website: if there's no infrastructure DR telemetry either (e.g. a
+    # Datadog-only setup), DR isn't measurable — report it honestly as N/A.
     if not backups and not replication and not failovers:
-        web = website_dr_from_metrics(db)
-        if web is not None:
-            return DRStatusResponse(
-                dr_score=web["dr_score"],
-                readiness=web["readiness"],
-                backups=[],
-                replication=[],
-                failovers=[],
-            )
-        # No DR telemetry at all and no website to derive from (e.g. a Datadog-
-        # only setup) — DR isn't measurable, so report it honestly as N/A
-        # instead of the misleading empty-data floor score.
         return DRStatusResponse(
             dr_score=None,
             readiness="not_measured",
