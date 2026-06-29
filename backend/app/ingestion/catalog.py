@@ -50,6 +50,22 @@ CONNECTOR_CATALOG: List[Dict[str, Any]] = [
         ],
     },
     {
+        "app_type": "gcp",
+        "label": "GCP Cloud Monitoring",
+        "description": "Ingest Google Cloud Monitoring metrics (and alert "
+        "policies) for a GCP project.",
+        "icon": "gcp",
+        "source": "gcp",
+        "live_supported": True,  # requires google-cloud-monitoring installed
+        "fields": [
+            _field("project_id", "Project ID", placeholder="my-gcp-project"),
+            _field("credentials_json", "Service account key (JSON)", secret=True,
+                   placeholder='{"type":"service_account",...}', required=False),
+            _field("metric_type", "Metric type", required=False,
+                   placeholder="compute.googleapis.com/instance/cpu/utilization"),
+        ],
+    },
+    {
         "app_type": "datadog",
         "label": "Datadog",
         "description": "Ingest Datadog events and monitor alerts.",

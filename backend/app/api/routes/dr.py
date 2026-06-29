@@ -22,39 +22,14 @@ from app.schemas.api import DREventOut, DRStatusResponse
 router = APIRouter(prefix="/dr", tags=["disaster-recovery"])
 
 
-@router.get("/status", response_model=DRStatusResponse)
-def dr_status(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    backups = db.execute(select(Backup)).scalars().all()
-    replication = db.execute(select(ReplicationStatus)).scalars().all()
-    failovers = db.execute(select(FailoverEvent)).scalars().all()
+# Connectors that emit REAL backup/replication/failover telemetry (true RPO/RTO
+# signals). When one of these is connected, its DR rows are authoritative.
+_DR_SIGNAL_APP_TYPES = ["gcp"]
 
-    # A connected live website's REAL measured resilience (TLS, DNS redundancy,
-    # uptime) takes precedence — it reflects the live monitored app, not any
-    # leftover demo/seed DR rows that may still be present in merge mode.
-    web = website_dr_from_metrics(db)
-    if web is not None:
-        return DRStatusResponse(
-            dr_score=web["dr_score"],
-            readiness=web["readiness"],
-            backups=[],
-            replication=[],
-            failovers=[],
-        )
 
-    # No website: if there's no infrastructure DR telemetry either (e.g. a
-    # Datadog-only setup), DR isn't measurable — report it honestly as N/A.
-    if not backups and not replication and not failovers:
-        return DRStatusResponse(
-            dr_score=None,
-            readiness="not_measured",
-            backups=[],
-            replication=[],
-            failovers=[],
-        )
-
-    # Reuse the DR agent to compute the readiness score from live telemetry.
+def _traditional_assessment(db, backups, replication, failovers):
     agent = DisasterRecoveryAgent(db)
-    assessment = agent.analyze(
+    return agent.analyze(
         {
             "backups": [
                 {
@@ -79,17 +54,75 @@ def dr_status(db: Session = Depends(get_db), _: User = Depends(get_current_user)
                     "service": f.service,
                     "status": f.status,
                     "last_tested": f.last_tested.isoformat() if f.last_tested else None,
+                    "auto_failover": (f.meta or {}).get("auto_failover"),
                 }
                 for f in failovers
             ],
         }
     )
+
+
+@router.get("/status", response_model=DRStatusResponse)
+def dr_status(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    from sqlalchemy import func
+
+    from app.db.models import ConnectedApp
+
+    backups = db.execute(select(Backup)).scalars().all()
+    replication = db.execute(select(ReplicationStatus)).scalars().all()
+    failovers = db.execute(select(FailoverEvent)).scalars().all()
+    have_dr_rows = bool(backups or replication or failovers)
+
+    # Tier 1 — a connected cloud source emitting real backup/replication/failover
+    # telemetry (e.g. GCP Cloud SQL) gives a genuine RPO/RTO-based score, which
+    # takes precedence over the availability-proxy below.
+    has_dr_connector = db.scalar(
+        select(func.count(ConnectedApp.id)).where(
+            ConnectedApp.app_type.in_(_DR_SIGNAL_APP_TYPES)
+        )
+    )
+    if has_dr_connector and have_dr_rows:
+        assessment = _traditional_assessment(db, backups, replication, failovers)
+        return DRStatusResponse(
+            dr_score=assessment["dr_score"],
+            readiness=assessment["readiness"],
+            backups=backups,
+            replication=replication,
+            failovers=failovers,
+        )
+
+    # Tier 2 — a live website's REAL measured resilience (TLS, DNS redundancy,
+    # uptime). An availability proxy, but real measurements; preferred over any
+    # leftover demo/seed DR rows that may still be present in merge mode.
+    web = website_dr_from_metrics(db)
+    if web is not None:
+        return DRStatusResponse(
+            dr_score=web["dr_score"],
+            readiness=web["readiness"],
+            backups=[],
+            replication=[],
+            failovers=[],
+        )
+
+    # Tier 3 — DR rows from a dedicated DR connector / seed (no website, no
+    # cloud DR connector).
+    if have_dr_rows:
+        assessment = _traditional_assessment(db, backups, replication, failovers)
+        return DRStatusResponse(
+            dr_score=assessment["dr_score"],
+            readiness=assessment["readiness"],
+            backups=backups,
+            replication=replication,
+            failovers=failovers,
+        )
+
+    # Tier 4 — nothing measurable; report honestly as N/A.
     return DRStatusResponse(
-        dr_score=assessment["dr_score"],
-        readiness=assessment["readiness"],
-        backups=backups,
-        replication=replication,
-        failovers=failovers,
+        dr_score=None,
+        readiness="not_measured",
+        backups=[],
+        replication=[],
+        failovers=[],
     )
 
 

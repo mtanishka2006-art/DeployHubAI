@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from sqlalchemy import select
+
 from app.db.models import (
     Backup,
     DisasterRecoveryEvent,
@@ -30,43 +32,51 @@ class DisasterRecoveryProcessor(BaseProcessor):
         return self._persist_dr_event(event, features)
 
     # --- specific persisters --- #
+    # Backup / replication / failover are *state snapshots*, not an append-only
+    # log: a connector re-reports the same entity every poll. Upsert by natural
+    # key so repeated syncs update one row instead of accumulating duplicates.
     def _persist_backup(self, event, f):
-        row = Backup(
-            system=f.get("system", event.service),
-            service=event.service,
-            status=f.get("status", "healthy"),
-            last_backup=f.get("last_backup") or event.timestamp,
-            rpo_minutes=int(f.get("rpo_minutes", 60) or 60),
-            size_gb=float(f.get("size_gb", 0.0) or 0.0),
-            meta=json_safe(f),
-        )
+        system = f.get("system", event.service)
+        row = self.db.execute(
+            select(Backup).where(Backup.system == system, Backup.service == event.service)
+        ).scalar_one_or_none() or Backup(system=system, service=event.service)
+        row.status = f.get("status", "healthy")
+        row.last_backup = f.get("last_backup") or event.timestamp
+        row.rpo_minutes = int(f.get("rpo_minutes", 60) or 60)
+        row.size_gb = float(f.get("size_gb", 0.0) or 0.0)
+        row.meta = json_safe(f)
         self.db.add(row)
         self.db.flush()
         return row
 
     def _persist_failover(self, event, f):
-        row = FailoverEvent(
-            service=event.service,
-            region=f.get("region", ""),
-            target_region=f.get("target_region", ""),
-            status=f.get("status", "ready"),
-            last_tested=f.get("last_tested"),
-            rto_minutes=int(f.get("rto_minutes", 30) or 30),
-            timestamp=event.timestamp,
-            meta=json_safe(f),
-        )
+        region = f.get("region", "")
+        row = self.db.execute(
+            select(FailoverEvent).where(
+                FailoverEvent.service == event.service, FailoverEvent.region == region
+            )
+        ).scalar_one_or_none() or FailoverEvent(service=event.service, region=region)
+        row.target_region = f.get("target_region", "")
+        row.status = f.get("status", "ready")
+        row.last_tested = f.get("last_tested")
+        row.rto_minutes = int(f.get("rto_minutes", 30) or 30)
+        row.timestamp = event.timestamp
+        row.meta = json_safe(f)
         self.db.add(row)
         self.db.flush()
         return row
 
     def _persist_replication(self, event, f):
-        row = ReplicationStatus(
-            source=f.get("source", event.service),
-            target=f.get("target", ""),
-            status=f.get("status", "in_sync"),
-            lag_seconds=int(f.get("lag_seconds", 0) or 0),
-            timestamp=event.timestamp,
-        )
+        src = f.get("source", event.service)
+        target = f.get("target", "")
+        row = self.db.execute(
+            select(ReplicationStatus).where(
+                ReplicationStatus.source == src, ReplicationStatus.target == target
+            )
+        ).scalar_one_or_none() or ReplicationStatus(source=src, target=target)
+        row.status = f.get("status", "in_sync")
+        row.lag_seconds = int(f.get("lag_seconds", 0) or 0)
+        row.timestamp = event.timestamp
         self.db.add(row)
         self.db.flush()
         return row

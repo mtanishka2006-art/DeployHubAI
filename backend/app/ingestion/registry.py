@@ -13,6 +13,7 @@ from app.ingestion.azure import AzureConnector
 from app.ingestion.base import BaseConnector
 from app.ingestion.datadog import DatadogConnector
 from app.ingestion.disaster_recovery import DisasterRecoveryConnector
+from app.ingestion.gcp import GCPConnector
 from app.ingestion.github_actions import GithubActionsConnector
 from app.ingestion.jenkins import JenkinsConnector
 from app.ingestion.jira import JiraConnector
@@ -27,6 +28,7 @@ CONNECTOR_REGISTRY: Dict[str, Type[BaseConnector]] = {
     "jenkins": JenkinsConnector,
     "github_actions": GithubActionsConnector,
     "aws": AWSConnector,
+    "gcp": GCPConnector,
     "azure": AzureConnector,
     "kubernetes": KubernetesConnector,
     "logs": LogConnector,

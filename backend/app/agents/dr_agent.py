@@ -37,9 +37,12 @@ class DisasterRecoveryAgent(BaseAgent):
         failover_score, failover_risks = self._score_failovers(failovers)
 
         # Weighted composite (backups 35%, replication 30%, failover 35%).
-        dr_score = round(
-            0.35 * backup_score + 0.30 * repl_score + 0.35 * failover_score
-        )
+        weighted = 0.35 * backup_score + 0.30 * repl_score + 0.35 * failover_score
+        # Weakest-link cap: DR is only as strong as its worst critical pillar —
+        # a perfect backup can't compensate for a broken failover. The composite
+        # can sit at most 15 points above the weakest pillar.
+        weakest = min(backup_score, repl_score, failover_score)
+        dr_score = round(min(weighted, weakest + 15))
         risks = backup_risks + repl_risks + failover_risks
         readiness = self._readiness(dr_score)
         confidence = round(
@@ -95,7 +98,9 @@ class DisasterRecoveryAgent(BaseAgent):
                 score -= 30
                 risks.append(f"Failover for {f.get('service')} not ready "
                              f"({f.get('status')})")
-            if _hours_since(f.get("last_tested")) > 24 * 90:  # untested in 90d
+            # Automatic HA (e.g. Cloud SQL REGIONAL) is continuously maintained,
+            # so the "untested" staleness penalty doesn't apply to it.
+            if not f.get("auto_failover") and _hours_since(f.get("last_tested")) > 24 * 90:
                 score -= 15
                 risks.append(f"Failover for {f.get('service')} untested >90d")
         return max(0, score), risks

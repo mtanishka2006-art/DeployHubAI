@@ -5,6 +5,7 @@ import {
   Plug,
   Github,
   Cloud,
+  CloudCog,
   ClipboardList,
   BellRing,
   Activity,
@@ -55,6 +56,8 @@ function iconFor(appType: string) {
       return Github;
     case "aws":
       return Cloud;
+    case "gcp":
+      return CloudCog;
     case "jira":
       return ClipboardList;
     case "pagerduty":
