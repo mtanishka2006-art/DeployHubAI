@@ -23,3 +23,4 @@ frontend/.env.local
 .DS_Store
 .idea/
 .vscode/
+.ui-snapshots/

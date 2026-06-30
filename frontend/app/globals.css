@@ -2,23 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Chic professional light theme: cool neutral canvas, crisp near-black ink,
+   white cards, a refined premium indigo accent. Restrained and editorial —
+   pretty without the pastel-purple "girly" wash. */
 :root {
-  --background: 222 47% 7%;
-  --foreground: 210 40% 96%;
-  --card: 222 44% 10%;
-  --card-foreground: 210 40% 96%;
-  --primary: 199 89% 48%;
-  --primary-foreground: 222 47% 7%;
-  --secondary: 217 33% 17%;
-  --secondary-foreground: 210 40% 96%;
-  --muted: 217 33% 15%;
-  --muted-foreground: 215 20% 60%;
-  --accent: 217 33% 20%;
-  --accent-foreground: 210 40% 96%;
-  --border: 217 33% 20%;
-  --input: 217 33% 18%;
-  --ring: 199 89% 48%;
-  --radius: 0.6rem;
+  --background: 220 24% 97%;      /* #F4F6FA cool neutral canvas */
+  --foreground: 222 47% 11%;      /* #0F172A near-black slate ink */
+  --card: 0 0% 100%;              /* white surfaces */
+  --card-foreground: 222 47% 11%;
+  --primary: 243 75% 59%;         /* #4F46E5 premium indigo */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 20% 95%;       /* cool grey surface */
+  --secondary-foreground: 222 40% 18%;
+  --muted: 220 20% 95%;
+  --muted-foreground: 218 12% 46%; /* #64748B slate */
+  --accent: 220 22% 94%;
+  --accent-foreground: 222 40% 18%;
+  --border: 220 18% 90%;          /* #E2E6EC cool border */
+  --input: 220 18% 88%;
+  --ring: 243 75% 59%;
+  --radius: 0.85rem;
 }
 
 * {
@@ -32,9 +35,10 @@ body {
 }
 
 body {
+  /* Whisper-faint indigo glow, top only — depth without colour wash. */
   background-image:
-    radial-gradient(circle at 15% 0%, hsl(199 89% 48% / 0.06), transparent 40%),
-    radial-gradient(circle at 85% 10%, hsl(265 89% 60% / 0.05), transparent 40%);
+    radial-gradient(circle at 15% -8%, hsl(243 75% 59% / 0.05), transparent 40%),
+    radial-gradient(circle at 90% -5%, hsl(210 60% 55% / 0.035), transparent 40%);
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
 }
@@ -44,10 +48,10 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: hsl(var(--background));
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--border));
+  background: hsl(220 14% 82%);
   border-radius: 6px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -56,9 +60,9 @@ body {
 
 .grid-glow {
   background-image: linear-gradient(
-      hsl(var(--border) / 0.4) 1px,
+      hsl(var(--border) / 0.6) 1px,
       transparent 1px
     ),
-    linear-gradient(90deg, hsl(var(--border) / 0.4) 1px, transparent 1px);
+    linear-gradient(90deg, hsl(var(--border) / 0.6) 1px, transparent 1px);
   background-size: 40px 40px;
 }

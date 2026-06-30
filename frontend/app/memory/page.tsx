@@ -165,7 +165,7 @@ export default function MemoryPage() {
                     </div>
                   )}
                   {r.outcome && (
-                    <p className="text-emerald-400">{r.outcome}</p>
+                    <p className="text-emerald-600">{r.outcome}</p>
                   )}
                   {r.occurred_at && (
                     <p className="text-xs text-muted-foreground">

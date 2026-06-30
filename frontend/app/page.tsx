@@ -140,7 +140,9 @@ export default function OverviewPage() {
                 sub="Open across all services"
                 icon={<AlertOctagon className="h-5 w-5" />}
                 accent={
-                  data.active_incidents > 0 ? "text-amber-400" : "text-emerald-400"
+                  data.active_incidents > 0
+                    ? "text-amber-400"
+                    : "text-emerald-600"
                 }
               />
               <Stat
@@ -148,7 +150,7 @@ export default function OverviewPage() {
                 value={`${Math.round(data.recovery_success_rate)}%`}
                 sub="Automated recovery rate"
                 icon={<RefreshCw className="h-5 w-5" />}
-                accent="text-emerald-400"
+                accent="text-emerald-600"
               />
               <Stat
                 label="DR Readiness"
@@ -197,7 +199,7 @@ export default function OverviewPage() {
                                   return (
                                     <Ico
                                       key={c}
-                                      className="h-3 w-3 text-emerald-400"
+                                      className="h-3 w-3 text-emerald-600"
                                     />
                                   );
                                 })}
@@ -223,7 +225,7 @@ export default function OverviewPage() {
                               width: `${Math.max(0, Math.min(100, s.score))}%`,
                               background:
                                 s.score >= 80
-                                  ? "hsl(152 70% 45%)"
+                                  ? "hsl(150 42% 70%)"
                                   : s.score >= 60
                                   ? "hsl(40 90% 55%)"
                                   : "hsl(0 80% 60%)",

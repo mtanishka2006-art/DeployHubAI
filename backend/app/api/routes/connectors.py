@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_role
 from app.core.crypto import encrypt_dict
 from app.core.security import Role
-from app.db.models import ConnectedApp, ConnectorEvent, User
+from app.db.models import ConnectedApp, ConnectorEvent, Pipeline, User
 from app.db.session import get_db
 from app.ingestion.catalog import CONNECTOR_CATALOG, get_catalog_entry, is_supported
 from app.ingestion.project_import import import_project_zip
@@ -226,8 +226,18 @@ def disconnect(
     app = db.get(ConnectedApp, app_id)
     if not app:
         raise HTTPException(status_code=404, detail="Connector not found")
-    # Deleting the app cascades its ConnectorEvents + Pipelines.
-    db.delete(app)
+    # Remove child rows explicitly. connector_events.connected_app_id is NOT NULL,
+    # so the ORM's default "set FK to NULL on delete" raises an IntegrityError;
+    # bulk deletes bypass the ORM and drop the rows cleanly.
+    db.query(ConnectorEvent).filter(
+        ConnectorEvent.connected_app_id == app_id
+    ).delete(synchronize_session=False)
+    db.query(Pipeline).filter(
+        Pipeline.connected_app_id == app_id
+    ).delete(synchronize_session=False)
+    db.query(ConnectedApp).filter(ConnectedApp.id == app_id).delete(
+        synchronize_session=False
+    )
     db.commit()
 
     # Imported projects (zip / git) are ingested in 'replace' mode, so all the

@@ -1,7 +1,7 @@
 import * as React from "react";
 
 function scoreColor(score: number): string {
-  if (score >= 80) return "hsl(152 70% 45%)";
+  if (score >= 80) return "hsl(150 42% 70%)";
   if (score >= 60) return "hsl(40 90% 55%)";
   return "hsl(0 80% 60%)";
 }
