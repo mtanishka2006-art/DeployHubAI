@@ -62,6 +62,14 @@ export function severityVariant(severity?: string): BadgeVariant {
 
 export function statusVariant(status?: string): BadgeVariant {
   const s = (status || "").toLowerCase();
+  // Bad/qualified states first — checked before the generic lists so
+  // substrings don't false-match (e.g. "unhealthy" contains "healthy",
+  // "not_ready" contains "ready").
+  if (s.includes("unhealthy")) return "danger";
+  if (s.includes("not_ready") || s.includes("not ready")) return "danger";
+  if (s.includes("at_risk") || s.includes("at risk") || s === "partial")
+    return "warning";
+  if (s.includes("not_measured") || s.includes("not measured")) return "muted";
   if (
     ["healthy", "success", "succeeded", "resolved", "ok", "active", "ready", "online", "completed", "passed", "in_sync"].some(
       (x) => s.includes(x)
