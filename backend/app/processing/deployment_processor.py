@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from sqlalchemy import select
+
 from app.db.models import Deployment, DeploymentStatus
 from app.memory.infrastructure_memory import get_memory
 from app.processing.base import BaseProcessor, json_safe
@@ -22,24 +24,36 @@ class DeploymentProcessor(BaseProcessor):
         return md
 
     def persist(self, event: UnifiedEvent, features: Dict[str, Any]):
-        dep = Deployment(
+        version = str(features.get("version", ""))
+        commit = str(features.get("commit", ""))
+        # A connector re-reports the same run every poll (and its status may
+        # transition in_progress -> success). Upsert by run identity so repeated
+        # syncs update one row instead of accumulating duplicates.
+        dep = self.db.execute(
+            select(Deployment).where(
+                Deployment.source == event.source,
+                Deployment.service == event.service,
+                Deployment.version == version,
+                Deployment.commit == commit,
+            )
+        ).scalar_one_or_none() or Deployment(
             source=event.source,
             service=event.service,
-            environment=event.environment,
-            version=str(features.get("version", "")),
-            commit=str(features.get("commit", "")),
-            actor=str(features.get("actor", "")),
-            status=features["status"],
-            duration_seconds=int(features.get("duration_seconds", 0) or 0),
-            timestamp=event.timestamp,
-            meta=json_safe(
-                {
-                    k: v
-                    for k, v in features.items()
-                    if k
-                    not in {"version", "commit", "actor", "status", "duration_seconds"}
-                }
-            ),
+            version=version,
+            commit=commit,
+        )
+        dep.environment = event.environment
+        dep.actor = str(features.get("actor", ""))
+        dep.status = features["status"]
+        dep.duration_seconds = int(features.get("duration_seconds", 0) or 0)
+        dep.timestamp = event.timestamp
+        dep.meta = json_safe(
+            {
+                k: v
+                for k, v in features.items()
+                if k
+                not in {"version", "commit", "actor", "status", "duration_seconds"}
+            }
         )
         self.db.add(dep)
         self.db.flush()

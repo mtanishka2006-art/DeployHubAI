@@ -5,7 +5,7 @@ Output : {"dr_score": int, "readiness": str, ...}
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from app.agents.base import BaseAgent
@@ -183,10 +183,14 @@ def website_dr_from_metrics(db) -> Optional[Dict[str, Any]]:
     tls_valid = _latest("tls_valid")
     cert_days = _latest("cert_days_to_expiry")
     redundancy = _latest("endpoint_redundancy")
+    # Uptime over a rolling 24h window — current readiness shouldn't be diluted
+    # forever by a brief outage from days ago.
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
     uptime = db.scalar(
         select(func.avg(InfrastructureMetric.value)).where(
             InfrastructureMetric.source == "website",
             InfrastructureMetric.metric_name == "availability",
+            InfrastructureMetric.timestamp >= since,
         )
     )
     if tls_valid is None and redundancy is None and uptime is None:
@@ -201,4 +205,93 @@ def website_dr_from_metrics(db) -> Optional[Dict[str, Any]]:
         "readiness": DisasterRecoveryAgent._readiness(score),
         "components": components,
         "kind": "website",
+    }
+
+
+# Connectors that emit REAL backup/replication/failover telemetry (true RPO/RTO
+# signals). When one is connected, its DR rows are authoritative.
+_DR_SIGNAL_APP_TYPES = ["gcp"]
+
+
+def compute_dr_status(db) -> Dict[str, Any]:
+    """Single source of truth for DR readiness, shared by /dr/status and the
+    /overview dashboard so they never disagree. Tiered precedence:
+
+      1. real backup/replication/failover signals from a connected cloud DR
+         source (e.g. GCP Cloud SQL) — a genuine RPO/RTO score;
+      2. a live website's measured resilience (TLS/DNS/uptime) — availability
+         proxy, preferred over leftover seed DR rows;
+      3. DR rows from a dedicated DR connector / seed;
+      4. nothing measurable -> N/A.
+
+    Returns {dr_score, readiness, backups, replication, failovers, kind}.
+    """
+    from sqlalchemy import func, select
+
+    from app.db.models import (
+        Backup,
+        ConnectedApp,
+        FailoverEvent,
+        ReplicationStatus,
+    )
+
+    backups = db.execute(select(Backup)).scalars().all()
+    replication = db.execute(select(ReplicationStatus)).scalars().all()
+    failovers = db.execute(select(FailoverEvent)).scalars().all()
+    have_dr_rows = bool(backups or replication or failovers)
+
+    def _assess(kind: str) -> Dict[str, Any]:
+        agent = DisasterRecoveryAgent(db)
+        a = agent.analyze(
+            {
+                "backups": [
+                    {"system": b.system, "status": b.status,
+                     "last_backup": b.last_backup.isoformat(),
+                     "rpo_minutes": b.rpo_minutes}
+                    for b in backups
+                ],
+                "replication": [
+                    {"source": r.source, "target": r.target, "status": r.status,
+                     "lag_seconds": r.lag_seconds}
+                    for r in replication
+                ],
+                "failovers": [
+                    {"service": f.service, "status": f.status,
+                     "last_tested": f.last_tested.isoformat() if f.last_tested else None,
+                     "auto_failover": (f.meta or {}).get("auto_failover")}
+                    for f in failovers
+                ],
+            }
+        )
+        return {
+            "dr_score": a["dr_score"], "readiness": a["readiness"],
+            "backups": backups, "replication": replication,
+            "failovers": failovers, "kind": kind,
+        }
+
+    # Tier 1 — real DR telemetry from a connected cloud DR source.
+    has_dr_connector = db.scalar(
+        select(func.count(ConnectedApp.id)).where(
+            ConnectedApp.app_type.in_(_DR_SIGNAL_APP_TYPES)
+        )
+    )
+    if has_dr_connector and have_dr_rows:
+        return _assess("infrastructure")
+
+    # Tier 2 — live website resilience proxy.
+    web = website_dr_from_metrics(db)
+    if web is not None:
+        return {
+            "dr_score": web["dr_score"], "readiness": web["readiness"],
+            "backups": [], "replication": [], "failovers": [], "kind": "website",
+        }
+
+    # Tier 3 — DR rows from a dedicated connector / seed.
+    if have_dr_rows:
+        return _assess("infrastructure")
+
+    # Tier 4 — nothing measurable.
+    return {
+        "dr_score": None, "readiness": "not_measured",
+        "backups": [], "replication": [], "failovers": [], "kind": "none",
     }

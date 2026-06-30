@@ -7,17 +7,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.agents.dr_agent import DisasterRecoveryAgent, website_dr_from_metrics
+from app.agents.dr_agent import compute_dr_status
 from app.agents.monitoring_agent import MonitoringAgent
 from app.api.deps import get_current_user
 from app.db.base import utcnow
 from app.db.models import (
-    Backup,
     Deployment,
-    FailoverEvent,
     Incident,
     InfrastructureMetric,
-    ReplicationStatus,
     User,
 )
 from app.db.session import get_db
@@ -117,43 +114,9 @@ def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user))
         status=mon._status_from_score(overall), score=overall
     )
 
-    # DR readiness.
-    backup_rows = db.execute(select(Backup)).scalars().all()
-    repl_rows = db.execute(select(ReplicationStatus)).scalars().all()
-    failover_rows = db.execute(select(FailoverEvent)).scalars().all()
-
-    # A connected website's measured resilience (TLS/DNS/uptime) takes
-    # precedence over any leftover seed/infra DR rows present in merge mode.
-    web_dr = website_dr_from_metrics(db)
-    no_infra_dr = not backup_rows and not repl_rows and not failover_rows
-
-    if web_dr is not None:
-        dr = web_dr
-    elif no_infra_dr:
-        # No website and no DR data (e.g. Datadog-only) — DR isn't measurable.
-        dr = {"dr_score": None, "readiness": "not_measured"}
-    else:
-        dr_agent = DisasterRecoveryAgent(db)
-        dr = dr_agent.analyze(
-            {
-                "backups": [
-                    {"system": b.system, "status": b.status,
-                     "last_backup": b.last_backup.isoformat(),
-                     "rpo_minutes": b.rpo_minutes}
-                    for b in backup_rows
-                ],
-                "replication": [
-                    {"source": r.source, "target": r.target, "status": r.status,
-                     "lag_seconds": r.lag_seconds}
-                    for r in repl_rows
-                ],
-                "failovers": [
-                    {"service": f.service, "status": f.status,
-                     "last_tested": f.last_tested.isoformat() if f.last_tested else None}
-                    for f in failover_rows
-                ],
-            }
-        )
+    # DR readiness — shared single source of truth with /dr/status so the
+    # dashboard and the DR page never disagree.
+    dr = compute_dr_status(db)
 
     recent_deployments = db.execute(
         select(Deployment).order_by(Deployment.timestamp.desc()).limit(8)
