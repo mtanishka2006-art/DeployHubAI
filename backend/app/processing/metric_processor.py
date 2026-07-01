@@ -25,6 +25,7 @@ class MetricProcessor(BaseProcessor):
             source=event.source,
             service=event.service,
             environment=event.environment,
+            owner=features.get("_owner", ""),
             metric_name=features.get("metric_name", "metric"),
             value=features.get("value", 0.0),
             unit=features.get("unit", ""),

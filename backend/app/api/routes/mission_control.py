@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_role
+from app.api.deps import require_role, visible_owner
 from app.core.security import Role
 from app.db.models import MissionControlReport, User
 from app.db.session import get_db
@@ -21,9 +21,9 @@ router = APIRouter(prefix="/mission-control", tags=["mission-control"])
 def run_mission_control(
     payload: MissionControlRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(Role.SRE)),
+    user: User = Depends(require_role(Role.SRE)),
 ):
-    mc = MissionControl(db)
+    mc = MissionControl(db, owner=user.username)
     report = mc.run(payload.model_dump())
     return MissionControlReportOut(**report)
 
@@ -32,13 +32,17 @@ def run_mission_control(
 def list_reports(
     limit: int = Query(20, le=200),
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(Role.VIEWER)),
+    user: User = Depends(require_role(Role.VIEWER)),
 ):
-    rows = db.execute(
+    q = (
         select(MissionControlReport)
         .order_by(MissionControlReport.created_at.desc())
         .limit(limit)
-    ).scalars().all()
+    )
+    owner = visible_owner(user)
+    if owner is not None:
+        q = q.where(MissionControlReport.owner == owner)
+    rows = db.execute(q).scalars().all()
     return [
         MissionControlReportOut(
             incident_id=r.incident_id,

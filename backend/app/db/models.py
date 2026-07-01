@@ -78,7 +78,18 @@ class User(Base, TimestampMixin):
 # --------------------------------------------------------------------------- #
 # Metrics
 # --------------------------------------------------------------------------- #
-class InfrastructureMetric(Base, TimestampMixin):
+class OwnedMixin:
+    """Per-user data ownership for multi-tenant isolation.
+
+    ``owner`` is the username of the account whose connector produced the row.
+    Empty string means system/shared. Non-admin users only see rows they own;
+    admins see everything.
+    """
+
+    owner: Mapped[str] = mapped_column(String(120), default="", index=True)
+
+
+class InfrastructureMetric(Base, TimestampMixin, OwnedMixin):
     __tablename__ = "infrastructure_metrics"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -97,7 +108,7 @@ class InfrastructureMetric(Base, TimestampMixin):
 # --------------------------------------------------------------------------- #
 # Incidents
 # --------------------------------------------------------------------------- #
-class Incident(Base, TimestampMixin):
+class Incident(Base, TimestampMixin, OwnedMixin):
     __tablename__ = "incidents"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -125,7 +136,7 @@ class Incident(Base, TimestampMixin):
 # --------------------------------------------------------------------------- #
 # Deployments
 # --------------------------------------------------------------------------- #
-class Deployment(Base, TimestampMixin):
+class Deployment(Base, TimestampMixin, OwnedMixin):
     __tablename__ = "deployments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -148,7 +159,7 @@ class Deployment(Base, TimestampMixin):
 # --------------------------------------------------------------------------- #
 # Disaster Recovery
 # --------------------------------------------------------------------------- #
-class DisasterRecoveryEvent(Base, TimestampMixin):
+class DisasterRecoveryEvent(Base, TimestampMixin, OwnedMixin):
     __tablename__ = "disaster_recovery_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -163,7 +174,7 @@ class DisasterRecoveryEvent(Base, TimestampMixin):
     meta: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
 
 
-class Backup(Base, TimestampMixin):
+class Backup(Base, TimestampMixin, OwnedMixin):
     __tablename__ = "backups"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -178,7 +189,7 @@ class Backup(Base, TimestampMixin):
     meta: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
 
 
-class FailoverEvent(Base, TimestampMixin):
+class FailoverEvent(Base, TimestampMixin, OwnedMixin):
     __tablename__ = "failover_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -196,7 +207,7 @@ class FailoverEvent(Base, TimestampMixin):
     meta: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
 
 
-class ReplicationStatus(Base, TimestampMixin):
+class ReplicationStatus(Base, TimestampMixin, OwnedMixin):
     __tablename__ = "replication_status"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -267,7 +278,7 @@ class AgentOutput(Base, TimestampMixin):
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
 
 
-class MissionControlReport(Base, TimestampMixin):
+class MissionControlReport(Base, TimestampMixin, OwnedMixin):
     __tablename__ = "mission_control_reports"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -315,7 +326,7 @@ class ConnectedApp(Base, TimestampMixin):
     )
 
 
-class ConnectorEvent(Base, TimestampMixin):
+class ConnectorEvent(Base, TimestampMixin, OwnedMixin):
     """A lightweight log of each event a connector ingested (for the live feed
     and dashboard 'which connector feeds this service' badges)."""
 
@@ -338,7 +349,7 @@ class ConnectorEvent(Base, TimestampMixin):
     app: Mapped["ConnectedApp"] = relationship(back_populates="events")
 
 
-class Pipeline(Base, TimestampMixin):
+class Pipeline(Base, TimestampMixin, OwnedMixin):
     """A CI/CD pipeline definition detected in a connected source's repo."""
 
     __tablename__ = "pipelines"
@@ -355,7 +366,7 @@ class Pipeline(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), default="defined")
 
 
-class SimulationReport(Base, TimestampMixin):
+class SimulationReport(Base, TimestampMixin, OwnedMixin):
     __tablename__ = "simulation_reports"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

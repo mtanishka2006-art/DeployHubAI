@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_role
+from app.api.deps import get_current_user, require_role, visible_owner
 from app.core.crypto import encrypt_dict
 from app.core.security import Role
 from app.db.models import ConnectedApp, ConnectorEvent, Pipeline, User
@@ -41,12 +41,13 @@ def available(_: User = Depends(get_current_user)):
 
 @router.get("", response_model=List[ConnectedAppOut])
 def list_connected(
-    db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
-    rows = db.execute(
-        select(ConnectedApp).order_by(ConnectedApp.created_at.desc())
-    ).scalars().all()
-    return rows
+    q = select(ConnectedApp).order_by(ConnectedApp.created_at.desc())
+    owner = visible_owner(user)
+    if owner is not None:
+        q = q.where(ConnectedApp.created_by == owner)
+    return db.execute(q).scalars().all()
 
 
 @router.post("/connect", response_model=SyncResult)
@@ -178,10 +179,11 @@ async def import_project(
 def sync_now(
     app_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(Role.SRE)),
+    user: User = Depends(require_role(Role.SRE)),
 ):
     app = db.get(ConnectedApp, app_id)
-    if not app:
+    owner = visible_owner(user)
+    if not app or (owner is not None and app.created_by != owner):
         raise HTTPException(status_code=404, detail="Connector not found")
     app_type = app.app_type
     count, ok, message = sync_connected_app(db, app)
@@ -204,9 +206,11 @@ def connector_events(
     app_id: int,
     limit: int = Query(20, le=200),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    if not db.get(ConnectedApp, app_id):
+    app = db.get(ConnectedApp, app_id)
+    owner = visible_owner(user)
+    if not app or (owner is not None and app.created_by != owner):
         raise HTTPException(status_code=404, detail="Connector not found")
     rows = db.execute(
         select(ConnectorEvent)
@@ -221,10 +225,11 @@ def connector_events(
 def disconnect(
     app_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(Role.SRE)),
+    user: User = Depends(require_role(Role.SRE)),
 ):
     app = db.get(ConnectedApp, app_id)
-    if not app:
+    owner = visible_owner(user)
+    if not app or (owner is not None and app.created_by != owner):
         raise HTTPException(status_code=404, detail="Connector not found")
     # Remove child rows explicitly. connector_events.connected_app_id is NOT NULL,
     # so the ORM's default "set FK to NULL on delete" raises an IntegrityError;

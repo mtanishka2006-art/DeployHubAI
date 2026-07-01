@@ -33,6 +33,12 @@ def get_current_user(
     return user
 
 
+def visible_owner(user: User) -> "str | None":
+    """Data-isolation scope for reads. Returns None for admins (they see all
+    data) or the username for everyone else (they see only rows they own)."""
+    return None if user.role == Role.ADMIN.value else user.username
+
+
 def require_role(minimum: Role):
     """Dependency factory enforcing a minimum role (RBAC hierarchy)."""
 

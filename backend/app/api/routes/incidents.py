@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_role
+from app.api.deps import get_current_user, require_role, visible_owner
 from app.core.security import Role
 from app.db.models import Incident, User
 from app.db.session import get_db
@@ -23,9 +23,12 @@ def list_incidents(
     service: Optional[str] = None,
     limit: int = Query(100, le=500),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     q = select(Incident)
+    owner = visible_owner(user)
+    if owner is not None:
+        q = q.where(Incident.owner == owner)
     if status:
         q = q.where(Incident.status == status)
     if service:
@@ -38,7 +41,7 @@ def list_incidents(
 def create_incident(
     payload: IncidentCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(Role.DEVOPS)),
+    user: User = Depends(require_role(Role.DEVOPS)),
 ):
     incident = Incident(
         title=payload.title,
@@ -47,6 +50,7 @@ def create_incident(
         environment=payload.environment,
         severity=payload.severity,
         source=payload.source,
+        owner=user.username,
     )
     db.add(incident)
     db.commit()
@@ -58,10 +62,13 @@ def create_incident(
 def get_incident(
     incident_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     incident = db.get(Incident, incident_id)
     if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    owner = visible_owner(user)
+    if owner is not None and incident.owner != owner:
         raise HTTPException(status_code=404, detail="Incident not found")
     similar = get_memory().search_similar_incidents(
         incident.root_cause or incident.title, k=5

@@ -63,9 +63,13 @@ def ingest_events(
     """Persist a batch of events through the processors. When a ConnectedApp is
     given, also logs a ConnectorEvent per event and updates the app's counters.
     Returns the number of events successfully ingested."""
+    owner = (connected_app.created_by or "") if connected_app is not None else ""
     count = 0
     for event in events:
         try:
+            # Tag the event so each processor stamps row ownership (multi-tenant
+            # isolation: users only see data their own connector produced).
+            event.metadata = {**(event.metadata or {}), "_owner": owner}
             processor = _processor_for(event.event_type, db)
             processor.process(event)
             # Recovery markers (metadata.resolve) are internal signals that
@@ -81,6 +85,7 @@ def ingest_events(
                         severity=event.severity,
                         summary=str(_summarize(event))[:500],
                         timestamp=event.timestamp,
+                        owner=owner,
                     )
                 )
             count += 1

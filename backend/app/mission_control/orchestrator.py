@@ -29,8 +29,9 @@ logger = get_logger("mission_control")
 
 
 class MissionControl:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, owner: str = "") -> None:
         self.db = db
+        self.owner = owner
         self.monitoring = MonitoringAgent(db)
         self.rca = RCAAgent(db)
         self.dr = DisasterRecoveryAgent(db)
@@ -167,6 +168,7 @@ class MissionControl:
                 environment=request.get("environment", "prod"),
                 source="mission_control",
                 status="investigating",
+                owner=self.owner,
             )
             self.db.add(inc)
             self.db.flush()
@@ -281,6 +283,7 @@ class MissionControl:
         report = state["report"]
         row = MissionControlReport(
             incident_id=state.get("incident_id"),
+            owner=self.owner,
             system_health=report["system_health"],
             root_cause=report["root_cause"],
             dr_readiness=report["dr_readiness"],

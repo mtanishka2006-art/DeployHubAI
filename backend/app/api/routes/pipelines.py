@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, visible_owner
 from app.db.models import ConnectedApp, Pipeline, User
 from app.db.session import get_db
 from app.schemas.api import PipelineOut
@@ -20,7 +20,7 @@ def list_pipelines(
     provider: Optional[str] = None,
     limit: int = Query(200, le=1000),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     q = (
         select(Pipeline, ConnectedApp.name)
@@ -28,6 +28,9 @@ def list_pipelines(
         .order_by(Pipeline.provider, Pipeline.name)
         .limit(limit)
     )
+    owner = visible_owner(user)
+    if owner is not None:
+        q = q.where(Pipeline.owner == owner)
     if provider:
         q = q.where(Pipeline.provider == provider)
     rows = db.execute(q).all()

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, visible_owner
 from app.db.models import InfrastructureMetric, User
 from app.db.session import get_db
 from app.schemas.api import MetricOut
@@ -21,9 +21,12 @@ def list_metrics(
     metric_name: Optional[str] = None,
     limit: int = Query(100, le=1000),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     q = select(InfrastructureMetric)
+    owner = visible_owner(user)
+    if owner is not None:
+        q = q.where(InfrastructureMetric.owner == owner)
     if service:
         q = q.where(InfrastructureMetric.service == service)
     if metric_name:

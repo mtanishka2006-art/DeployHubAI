@@ -26,21 +26,24 @@ class DeploymentProcessor(BaseProcessor):
     def persist(self, event: UnifiedEvent, features: Dict[str, Any]):
         version = str(features.get("version", ""))
         commit = str(features.get("commit", ""))
+        owner = features.get("_owner", "")
         # A connector re-reports the same run every poll (and its status may
-        # transition in_progress -> success). Upsert by run identity so repeated
-        # syncs update one row instead of accumulating duplicates.
+        # transition in_progress -> success). Upsert by run identity (scoped to
+        # the owner) so repeated syncs update one row instead of duplicating.
         dep = self.db.execute(
             select(Deployment).where(
                 Deployment.source == event.source,
                 Deployment.service == event.service,
                 Deployment.version == version,
                 Deployment.commit == commit,
+                Deployment.owner == owner,
             )
         ).scalar_one_or_none() or Deployment(
             source=event.source,
             service=event.service,
             version=version,
             commit=commit,
+            owner=owner,
         )
         dep.environment = event.environment
         dep.actor = str(features.get("actor", ""))

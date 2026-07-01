@@ -438,6 +438,7 @@ def _ingest_root(
         db.add(
             Pipeline(
                 connected_app_id=approw.id,
+                owner=approw.created_by or "",
                 provider=p["provider"],
                 name=p["name"],
                 file_path=p["file_path"],

@@ -70,6 +70,7 @@ def sync_connected_app(db: Session, app: ConnectedApp) -> Tuple[int, bool, str]:
                     db.add(
                         Pipeline(
                             connected_app_id=app.id,
+                            owner=app.created_by or "",
                             provider="github_actions",
                             name=key[1],
                             file_path=key[0],

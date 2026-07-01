@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, visible_owner
 from app.db.models import ConnectorEvent, User
 from app.db.session import get_db
 from app.schemas.api import LogEntryOut
@@ -29,9 +29,12 @@ def list_logs(
     q: Optional[str] = Query(None, description="Substring search over the message"),
     limit: int = Query(200, le=1000),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     stmt = select(ConnectorEvent).where(ConnectorEvent.event_type == "log")
+    owner = visible_owner(user)
+    if owner is not None:
+        stmt = stmt.where(ConnectorEvent.owner == owner)
     if source:
         stmt = stmt.where(ConnectorEvent.source == source)
     if service:
@@ -46,15 +49,19 @@ def list_logs(
 
 @router.get("/sources", response_model=List[str])
 def log_sources(
-    db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
     """Distinct sources/applications that have logs — populates the source filter."""
-    rows = db.execute(
+    stmt = (
         select(ConnectorEvent.source)
         .where(ConnectorEvent.event_type == "log")
         .distinct()
         .order_by(ConnectorEvent.source)
-    ).scalars().all()
+    )
+    owner = visible_owner(user)
+    if owner is not None:
+        stmt = stmt.where(ConnectorEvent.owner == owner)
+    rows = db.execute(stmt).scalars().all()
     return [s for s in rows if s]
 
 
@@ -62,11 +69,14 @@ def log_sources(
 def log_services(
     source: Optional[str] = Query(None, description="Scope services to a source"),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """Distinct services that have log entries — populates the filter dropdown.
     When ``source`` is given, only that source's services are returned."""
     stmt = select(ConnectorEvent.service).where(ConnectorEvent.event_type == "log")
+    owner = visible_owner(user)
+    if owner is not None:
+        stmt = stmt.where(ConnectorEvent.owner == owner)
     if source:
         stmt = stmt.where(ConnectorEvent.source == source)
     rows = db.execute(

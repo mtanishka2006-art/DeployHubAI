@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.dr_agent import compute_dr_status
 from app.agents.monitoring_agent import MonitoringAgent
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, visible_owner
 from app.db.base import utcnow
 from app.db.models import (
     Deployment,
@@ -29,39 +29,54 @@ router = APIRouter(tags=["overview"])
 
 
 @router.get("/services", response_model=list[str])
-def services(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def services(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Distinct services currently present in the platform's data — used to
     populate service pickers so they reflect the connected/imported app."""
+    owner = visible_owner(user)
     names: set[str] = set()
-    for column in (
-        InfrastructureMetric.service,
-        Deployment.service,
-        Incident.service,
-    ):
-        for (name,) in db.execute(select(column).distinct()).all():
+    for model in (InfrastructureMetric, Deployment, Incident):
+        q = select(model.service).distinct()
+        if owner is not None:
+            q = q.where(model.owner == owner)
+        for (name,) in db.execute(q).all():
             if name:
                 names.add(name)
     return sorted(names)
 
 
 @router.get("/overview", response_model=OverviewResponse)
-def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def overview(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     since = utcnow() - timedelta(hours=24)
+    owner = visible_owner(user)
+
+    def _own(q, model):
+        return q.where(model.owner == owner) if owner is not None else q
 
     # Active incidents.
     active = db.scalar(
-        select(func.count(Incident.id)).where(
-            Incident.status.in_(["open", "investigating", "mitigated"])
+        _own(
+            select(func.count(Incident.id)).where(
+                Incident.status.in_(["open", "investigating", "mitigated"])
+            ),
+            Incident,
         )
     ) or 0
 
     # Recovery success rate from resolved incidents in the window.
     resolved = db.scalar(
-        select(func.count(Incident.id)).where(Incident.status == "resolved")
+        _own(
+            select(func.count(Incident.id)).where(Incident.status == "resolved"),
+            Incident,
+        )
     ) or 0
     total_closed = resolved + (
         db.scalar(
-            select(func.count(Incident.id)).where(Incident.status == "mitigated")
+            _own(
+                select(func.count(Incident.id)).where(
+                    Incident.status == "mitigated"
+                ),
+                Incident,
+            )
         ) or 0
     )
     recovery_rate = round((resolved / total_closed * 100) if total_closed else 100.0, 1)
@@ -70,7 +85,8 @@ def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user))
     services = [
         row[0]
         for row in db.execute(
-            select(InfrastructureMetric.service).distinct().limit(12)
+            _own(select(InfrastructureMetric.service).distinct(), InfrastructureMetric)
+            .limit(12)
         ).all()
     ]
     # Which connector app_types have fed each service (for live-data badges).
@@ -78,7 +94,10 @@ def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user))
 
     connector_map: dict[str, set] = {}
     for svc, app_type in db.execute(
-        select(ConnectorEvent.service, ConnectorEvent.app_type).distinct()
+        _own(
+            select(ConnectorEvent.service, ConnectorEvent.app_type).distinct(),
+            ConnectorEvent,
+        )
     ).all():
         connector_map.setdefault(svc, set()).add(app_type)
 
@@ -89,12 +108,13 @@ def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user))
         metrics = [
             {"service": m.service, "metric_name": m.metric_name, "value": m.value}
             for m in db.execute(
-                select(InfrastructureMetric)
-                .where(
-                    InfrastructureMetric.service == svc,
-                    InfrastructureMetric.timestamp >= since,
-                )
-                .limit(100)
+                _own(
+                    select(InfrastructureMetric).where(
+                        InfrastructureMetric.service == svc,
+                        InfrastructureMetric.timestamp >= since,
+                    ),
+                    InfrastructureMetric,
+                ).limit(100)
             ).scalars().all()
         ]
         result = mon.analyze({"metrics": metrics, "logs": []})
@@ -116,14 +136,18 @@ def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user))
 
     # DR readiness — shared single source of truth with /dr/status so the
     # dashboard and the DR page never disagree.
-    dr = compute_dr_status(db)
+    dr = compute_dr_status(db, owner=owner)
 
     recent_deployments = db.execute(
-        select(Deployment).order_by(Deployment.timestamp.desc()).limit(8)
+        _own(select(Deployment), Deployment)
+        .order_by(Deployment.timestamp.desc())
+        .limit(8)
     ).scalars().all()
 
     timeline_rows = db.execute(
-        select(Incident).order_by(Incident.detected_at.desc()).limit(12)
+        _own(select(Incident), Incident)
+        .order_by(Incident.detected_at.desc())
+        .limit(12)
     ).scalars().all()
     incident_timeline = [
         {

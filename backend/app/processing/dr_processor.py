@@ -18,6 +18,20 @@ from app.processing.base import BaseProcessor, json_safe
 from app.schemas.events import EventType, UnifiedEvent
 
 
+def _as_dt(value):
+    """Coerce a timestamp into a datetime. Connectors (e.g. GCP Cloud SQL) may
+    report times as ISO strings; SQLite's DateTime column only accepts datetime
+    objects, so normalise here. Returns None if it can't be parsed."""
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
 class DisasterRecoveryProcessor(BaseProcessor):
     name = "disaster_recovery"
 
@@ -37,11 +51,18 @@ class DisasterRecoveryProcessor(BaseProcessor):
     # key so repeated syncs update one row instead of accumulating duplicates.
     def _persist_backup(self, event, f):
         system = f.get("system", event.service)
+        owner = f.get("_owner", "")
         row = self.db.execute(
-            select(Backup).where(Backup.system == system, Backup.service == event.service)
-        ).scalar_one_or_none() or Backup(system=system, service=event.service)
+            select(Backup).where(
+                Backup.system == system,
+                Backup.service == event.service,
+                Backup.owner == owner,
+            )
+        ).scalar_one_or_none() or Backup(
+            system=system, service=event.service, owner=owner
+        )
         row.status = f.get("status", "healthy")
-        row.last_backup = f.get("last_backup") or event.timestamp
+        row.last_backup = _as_dt(f.get("last_backup")) or event.timestamp
         row.rpo_minutes = int(f.get("rpo_minutes", 60) or 60)
         row.size_gb = float(f.get("size_gb", 0.0) or 0.0)
         row.meta = json_safe(f)
@@ -51,14 +72,19 @@ class DisasterRecoveryProcessor(BaseProcessor):
 
     def _persist_failover(self, event, f):
         region = f.get("region", "")
+        owner = f.get("_owner", "")
         row = self.db.execute(
             select(FailoverEvent).where(
-                FailoverEvent.service == event.service, FailoverEvent.region == region
+                FailoverEvent.service == event.service,
+                FailoverEvent.region == region,
+                FailoverEvent.owner == owner,
             )
-        ).scalar_one_or_none() or FailoverEvent(service=event.service, region=region)
+        ).scalar_one_or_none() or FailoverEvent(
+            service=event.service, region=region, owner=owner
+        )
         row.target_region = f.get("target_region", "")
         row.status = f.get("status", "ready")
-        row.last_tested = f.get("last_tested")
+        row.last_tested = _as_dt(f.get("last_tested"))
         row.rto_minutes = int(f.get("rto_minutes", 30) or 30)
         row.timestamp = event.timestamp
         row.meta = json_safe(f)
@@ -69,11 +95,16 @@ class DisasterRecoveryProcessor(BaseProcessor):
     def _persist_replication(self, event, f):
         src = f.get("source", event.service)
         target = f.get("target", "")
+        owner = f.get("_owner", "")
         row = self.db.execute(
             select(ReplicationStatus).where(
-                ReplicationStatus.source == src, ReplicationStatus.target == target
+                ReplicationStatus.source == src,
+                ReplicationStatus.target == target,
+                ReplicationStatus.owner == owner,
             )
-        ).scalar_one_or_none() or ReplicationStatus(source=src, target=target)
+        ).scalar_one_or_none() or ReplicationStatus(
+            source=src, target=target, owner=owner
+        )
         row.status = f.get("status", "in_sync")
         row.lag_seconds = int(f.get("lag_seconds", 0) or 0)
         row.timestamp = event.timestamp
@@ -88,6 +119,7 @@ class DisasterRecoveryProcessor(BaseProcessor):
             region=f.get("region", ""),
             status=f.get("status", ""),
             detail=f.get("detail", f.get("message", "")),
+            owner=f.get("_owner", ""),
             timestamp=event.timestamp,
             meta=json_safe(f),
         )

@@ -44,6 +44,7 @@ class LogProcessor(BaseProcessor):
                 source=event.source,
                 service=event.service,
                 environment=event.environment,
+                owner=features.get("_owner", ""),
                 metric_name="log_event",
                 value=1.0,
                 unit="count",
@@ -64,6 +65,7 @@ class LogProcessor(BaseProcessor):
             .where(
                 Incident.service == event.service,
                 Incident.title == title,
+                Incident.owner == features.get("_owner", ""),
             )
             .order_by(Incident.detected_at.desc())
             .limit(1)
@@ -83,6 +85,7 @@ class LogProcessor(BaseProcessor):
             service=event.service,
             environment=event.environment,
             source=event.source,
+            owner=features.get("_owner", ""),
             detected_at=event.timestamp,
             meta=json_safe({k: v for k, v in features.items() if k != "message"}),
         )
@@ -99,6 +102,7 @@ class LogProcessor(BaseProcessor):
                 Incident.service == event.service,
                 Incident.title == title,
                 Incident.status.in_(["open", "investigating"]),
+                Incident.owner == features.get("_owner", ""),
             )
             .limit(1)
         ).scalars().first()

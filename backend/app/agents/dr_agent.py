@@ -153,24 +153,25 @@ def score_website_resilience(
     return score, {"tls": round(tls), "redundancy": round(red), "uptime": round(up)}
 
 
-def website_dr_from_metrics(db) -> Optional[Dict[str, Any]]:
+def website_dr_from_metrics(db, owner: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """DR readiness for a connected website, from the REAL signals its probes
     recorded (TLS validity/expiry, DNS redundancy, measured uptime). Returns
-    None when there is no website telemetry to score."""
+    None when there is no website telemetry to score. When ``owner`` is given,
+    only that user's website/metrics are considered (multi-tenant isolation)."""
     from sqlalchemy import func, select
 
     from app.db.models import ConnectedApp, InfrastructureMetric
 
-    has_site = db.scalar(
-        select(func.count(ConnectedApp.id)).where(
-            ConnectedApp.app_type == "website"
-        )
+    site_q = select(func.count(ConnectedApp.id)).where(
+        ConnectedApp.app_type == "website"
     )
-    if not has_site:
+    if owner is not None:
+        site_q = site_q.where(ConnectedApp.created_by == owner)
+    if not db.scalar(site_q):
         return None
 
     def _latest(metric_name: str):
-        return db.execute(
+        q = (
             select(InfrastructureMetric.value)
             .where(
                 InfrastructureMetric.source == "website",
@@ -178,7 +179,10 @@ def website_dr_from_metrics(db) -> Optional[Dict[str, Any]]:
             )
             .order_by(InfrastructureMetric.timestamp.desc())
             .limit(1)
-        ).scalar()
+        )
+        if owner is not None:
+            q = q.where(InfrastructureMetric.owner == owner)
+        return db.execute(q).scalar()
 
     tls_valid = _latest("tls_valid")
     cert_days = _latest("cert_days_to_expiry")
@@ -186,13 +190,14 @@ def website_dr_from_metrics(db) -> Optional[Dict[str, Any]]:
     # Uptime over a rolling 24h window — current readiness shouldn't be diluted
     # forever by a brief outage from days ago.
     since = datetime.now(timezone.utc) - timedelta(hours=24)
-    uptime = db.scalar(
-        select(func.avg(InfrastructureMetric.value)).where(
-            InfrastructureMetric.source == "website",
-            InfrastructureMetric.metric_name == "availability",
-            InfrastructureMetric.timestamp >= since,
-        )
+    uptime_q = select(func.avg(InfrastructureMetric.value)).where(
+        InfrastructureMetric.source == "website",
+        InfrastructureMetric.metric_name == "availability",
+        InfrastructureMetric.timestamp >= since,
     )
+    if owner is not None:
+        uptime_q = uptime_q.where(InfrastructureMetric.owner == owner)
+    uptime = db.scalar(uptime_q)
     if tls_valid is None and redundancy is None and uptime is None:
         return None
 
@@ -213,7 +218,7 @@ def website_dr_from_metrics(db) -> Optional[Dict[str, Any]]:
 _DR_SIGNAL_APP_TYPES = ["gcp"]
 
 
-def compute_dr_status(db) -> Dict[str, Any]:
+def compute_dr_status(db, owner: Optional[str] = None) -> Dict[str, Any]:
     """Single source of truth for DR readiness, shared by /dr/status and the
     /overview dashboard so they never disagree. Tiered precedence:
 
@@ -224,6 +229,7 @@ def compute_dr_status(db) -> Dict[str, Any]:
       3. DR rows from a dedicated DR connector / seed;
       4. nothing measurable -> N/A.
 
+    When ``owner`` is given, only that user's data is scored (multi-tenant).
     Returns {dr_score, readiness, backups, replication, failovers, kind}.
     """
     from sqlalchemy import func, select
@@ -235,9 +241,15 @@ def compute_dr_status(db) -> Dict[str, Any]:
         ReplicationStatus,
     )
 
-    backups = db.execute(select(Backup)).scalars().all()
-    replication = db.execute(select(ReplicationStatus)).scalars().all()
-    failovers = db.execute(select(FailoverEvent)).scalars().all()
+    def _scoped(model):
+        q = select(model)
+        if owner is not None:
+            q = q.where(model.owner == owner)
+        return db.execute(q).scalars().all()
+
+    backups = _scoped(Backup)
+    replication = _scoped(ReplicationStatus)
+    failovers = _scoped(FailoverEvent)
     have_dr_rows = bool(backups or replication or failovers)
 
     def _assess(kind: str) -> Dict[str, Any]:
@@ -270,16 +282,17 @@ def compute_dr_status(db) -> Dict[str, Any]:
         }
 
     # Tier 1 — real DR telemetry from a connected cloud DR source.
-    has_dr_connector = db.scalar(
-        select(func.count(ConnectedApp.id)).where(
-            ConnectedApp.app_type.in_(_DR_SIGNAL_APP_TYPES)
-        )
+    dr_conn_q = select(func.count(ConnectedApp.id)).where(
+        ConnectedApp.app_type.in_(_DR_SIGNAL_APP_TYPES)
     )
+    if owner is not None:
+        dr_conn_q = dr_conn_q.where(ConnectedApp.created_by == owner)
+    has_dr_connector = db.scalar(dr_conn_q)
     if has_dr_connector and have_dr_rows:
         return _assess("infrastructure")
 
     # Tier 2 — live website resilience proxy.
-    web = website_dr_from_metrics(db)
+    web = website_dr_from_metrics(db, owner=owner)
     if web is not None:
         return {
             "dr_score": web["dr_score"], "readiness": web["readiness"],
