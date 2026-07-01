@@ -145,6 +145,19 @@ export async function login(
   return data;
 }
 
+export async function register(
+  username: string,
+  password: string
+): Promise<LoginResponse> {
+  const data = await request<LoginResponse>("/auth/register", {
+    method: "POST",
+    body: { username, password },
+  });
+  setToken(data.access_token);
+  setRole(data.role);
+  return data;
+}
+
 export function getMe(): Promise<Me> {
   return request<Me>("/auth/me");
 }

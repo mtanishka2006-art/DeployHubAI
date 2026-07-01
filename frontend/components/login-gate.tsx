@@ -1,16 +1,20 @@
 "use client";
 
 import * as React from "react";
-import { Activity, Lock, Loader2 } from "lucide-react";
-import { login, ApiError } from "@/lib/api";
+import { Activity, Lock, UserPlus, Loader2 } from "lucide-react";
+import { login, register, ApiError } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+type Mode = "login" | "signup";
+
 export function LoginGate({ children }: { children: React.ReactNode }) {
   const { authed, ready, refresh } = useAuth();
+  const [mode, setMode] = React.useState<Mode>("login");
   const [username, setUsername] = React.useState("admin");
   const [password, setPassword] = React.useState("");
+  const [confirm, setConfirm] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -24,19 +28,36 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
 
   if (authed) return <>{children}</>;
 
+  const isSignup = mode === "signup";
+
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    setError(null);
+    setPassword("");
+    setConfirm("");
+    setUsername(next === "login" ? "admin" : "");
+  };
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+    if (isSignup && password !== confirm) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setLoading(true);
     try {
-      await login(username, password);
+      if (isSignup) {
+        await register(username.trim(), password);
+      } else {
+        await login(username, password);
+      }
       refresh();
     } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? err.message
-          : "Login failed. Check credentials and backend.";
-      setError(msg);
+      const fallback = isSignup
+        ? "Sign up failed. Please try again."
+        : "Login failed. Check credentials and backend.";
+      setError(err instanceof ApiError ? err.message : fallback);
     } finally {
       setLoading(false);
     }
@@ -61,7 +82,15 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
           className="space-y-4 rounded-xl border border-border bg-card/80 p-6 shadow-2xl shadow-black/40 backdrop-blur"
         >
           <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <Lock className="h-4 w-4" /> Operator Sign In
+            {isSignup ? (
+              <>
+                <UserPlus className="h-4 w-4" /> Create your account
+              </>
+            ) : (
+              <>
+                <Lock className="h-4 w-4" /> Operator Sign In
+              </>
+            )}
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">
@@ -70,7 +99,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
             <Input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="admin"
+              placeholder={isSignup ? "choose a username" : "admin"}
               autoComplete="username"
               required
             />
@@ -84,10 +113,25 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••"
-              autoComplete="current-password"
+              autoComplete={isSignup ? "new-password" : "current-password"}
               required
             />
           </div>
+          {isSignup && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Confirm password
+              </label>
+              <Input
+                type="password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                placeholder="••••••"
+                autoComplete="new-password"
+                required
+              />
+            </div>
+          )}
 
           {error && (
             <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
@@ -97,13 +141,32 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
 
           <Button type="submit" className="w-full" disabled={loading}>
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            Sign In
+            {isSignup ? "Create account" : "Sign In"}
           </Button>
 
-          <p className="text-center text-xs text-muted-foreground">
-            Hint: default credentials are{" "}
-            <span className="font-mono text-foreground">admin / admin</span>
-          </p>
+          {isSignup ? (
+            <p className="text-center text-xs text-muted-foreground">
+              Already have an account?{" "}
+              <button
+                type="button"
+                onClick={() => switchMode("login")}
+                className="font-medium text-primary hover:underline"
+              >
+                Sign in
+              </button>
+            </p>
+          ) : (
+            <p className="text-center text-xs text-muted-foreground">
+              New here?{" "}
+              <button
+                type="button"
+                onClick={() => switchMode("signup")}
+                className="font-medium text-primary hover:underline"
+              >
+                Create an account
+              </button>
+            </p>
+          )}
         </form>
       </div>
     </div>
