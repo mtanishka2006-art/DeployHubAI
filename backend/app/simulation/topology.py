@@ -104,10 +104,15 @@ def _infra_skeleton() -> Topology:
     # ---- Clouds / regions / clusters ----
     t.add_node(Node("aws", "cloud", cloud="aws"))
     t.add_node(Node("azure", "cloud", cloud="azure"))
+    t.add_node(Node("gcp", "cloud", cloud="gcp"))
     t.add_node(Node("aws:us-east-1", "region", cloud="aws", region="us-east-1",
                     failover="aws:us-west-2"))
     t.add_node(Node("aws:us-west-2", "region", cloud="aws", region="us-west-2"))
     t.add_node(Node("azure:eastus", "region", cloud="azure", region="eastus"))
+    # GCP region (Cloud SQL / GCE live here). us-west1 fails over to us-central1.
+    t.add_node(Node("gcp:us-west1", "region", cloud="gcp", region="us-west1",
+                    failover="gcp:us-central1"))
+    t.add_node(Node("gcp:us-central1", "region", cloud="gcp", region="us-central1"))
     t.add_node(Node("k8s:prod-east", "cluster", cloud="aws", region="us-east-1",
                     failover="k8s:prod-west"))
     t.add_node(Node("k8s:prod-west", "cluster", cloud="aws", region="us-west-2"))
@@ -123,6 +128,8 @@ def _infra_skeleton() -> Topology:
     t.add_edge("aws:us-east-1", "aws", "hosted_in")
     t.add_edge("aws:us-west-2", "aws", "hosted_in")
     t.add_edge("azure:eastus", "azure", "hosted_in")
+    t.add_edge("gcp:us-west1", "gcp", "hosted_in")
+    t.add_edge("gcp:us-central1", "gcp", "hosted_in")
     t.add_edge("k8s:prod-east", "aws:us-east-1", "hosted_in")
     t.add_edge("k8s:prod-west", "aws:us-west-2", "hosted_in")
     t.add_edge("postgres-primary", "aws:us-east-1", "hosted_in")
@@ -222,3 +229,36 @@ def topology_from_services(services: List[str], max_services: int = 12) -> Topol
         if name != gateway:
             t.add_edge(gateway, name, "calls")
     return t
+
+
+def attach_gcp_databases(
+    topo: Topology, names: List[str], region_id: str = "gcp:us-west1"
+) -> None:
+    """Place real GCP Cloud SQL instances into a GCP region and wire the
+    project's user-facing services to read from them.
+
+    Without this, a GCP region outage has nothing to take down (services are
+    hosted on the AWS/Azure skeleton), so the blast radius reads as 0. This makes
+    the simulation reflect that the app's databases actually live in GCP.
+    """
+    if region_id not in topo.nodes or not names:
+        return
+    region = topo.nodes[region_id]
+    added: List[str] = []
+    for name in names:
+        nid = f"cloudsql:{name}"
+        if nid in topo.nodes:
+            continue
+        topo.add_node(
+            Node(nid, "database", cloud=region.cloud, region=region.region, tier=3)
+        )
+        topo.add_edge(nid, region_id, "hosted_in")
+        added.append(nid)
+    if not added:
+        return
+    # User-facing services depend on the primary Cloud SQL instance, so a region
+    # outage cascades to them.
+    primary = added[0]
+    for node in list(topo.nodes.values()):
+        if node.kind == "service" and node.tier <= 1:
+            topo.add_edge(node.id, primary, "reads_from")

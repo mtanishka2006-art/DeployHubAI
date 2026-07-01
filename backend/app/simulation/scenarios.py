@@ -78,6 +78,23 @@ SCENARIOS: Dict[str, Scenario] = {
             topo, p.get("target") or "azure:eastus"
         ),
     ),
+    "gcp_region_outage": Scenario(
+        key="gcp_region_outage",
+        label="GCP Region Outage",
+        description="A GCP region (Cloud SQL / GCE) becomes unavailable.",
+        base_downtime_minutes=40,
+        severity="critical",
+        recovery_strategy=[
+            "Declare a SEV-1 and open an incident bridge.",
+            "Fail Cloud SQL over to the standby region (us-central1) and verify RPO.",
+            "Shift traffic via the global load balancer to the healthy region.",
+            "Re-point services to the promoted Cloud SQL primary.",
+            "Validate golden paths before all-clear.",
+        ],
+        failed_nodes=lambda topo, p: _region_nodes(
+            topo, p.get("target") or "gcp:us-west1"
+        ),
+    ),
     "kubernetes_cluster_failure": Scenario(
         key="kubernetes_cluster_failure",
         label="Kubernetes Cluster Failure",

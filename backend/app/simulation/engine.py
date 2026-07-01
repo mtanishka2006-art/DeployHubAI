@@ -46,7 +46,8 @@ def build_topology(db: Optional[Session]) -> Topology:
         try:
             from sqlalchemy import func, select
 
-            from app.db.models import ConnectedApp, InfrastructureMetric
+            from app.db.models import Backup, ConnectedApp, InfrastructureMetric
+            from app.simulation.topology import attach_gcp_databases
 
             if db.scalar(select(func.count(ConnectedApp.id))):
                 services = [
@@ -56,8 +57,18 @@ def build_topology(db: Optional[Session]) -> Topology:
                     ).scalars().all()
                     if s
                 ]
-                if services:
-                    return topology_from_services(services)
+                topo = (
+                    topology_from_services(services) if services else default_topology()
+                )
+                # Place the real GCP Cloud SQL instances into the GCP region so a
+                # region outage shows genuine blast radius.
+                cloud_sql = [
+                    n
+                    for n in db.execute(select(Backup.system).distinct()).scalars().all()
+                    if n
+                ]
+                attach_gcp_databases(topo, cloud_sql)
+                return topo
         except Exception:  # noqa: BLE001 - never let topology building crash a run
             logger.debug("dynamic topology build failed; using default")
     return default_topology()
@@ -82,6 +93,8 @@ def valid_targets(scenario_type: str, topo: Topology):
         return "region", regions("aws")
     if scenario_type == "azure_outage":
         return "region", regions("azure")
+    if scenario_type == "gcp_region_outage":
+        return "region", regions("gcp")
     if scenario_type == "kubernetes_cluster_failure":
         return "target", ids("cluster")
     if scenario_type == "database_failure":
@@ -278,6 +291,8 @@ class SimulationEngine:
             "us-east-1": "aws:us-east-1",
             "us-west-2": "aws:us-west-2",
             "eastus": "azure:eastus",
+            "us-west1": "gcp:us-west1",
+            "us-central1": "gcp:us-central1",
         }
         return mapping.get(region, region)
 

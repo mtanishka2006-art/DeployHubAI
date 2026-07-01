@@ -71,8 +71,10 @@ class GCPConnector(BaseConnector):
                 credentials=_credentials(self.config)
             )
             project = f"projects/{_project_id(self.config)}"
-            # Cheap validation call — list a single metric descriptor.
-            next(iter(client.list_metric_descriptors(name=project, page_size=1)), None)
+            # Cheap validation call — the pager fetches lazily, so pulling one
+            # item makes a single API round-trip that proves auth works.
+            req = monitoring_v3.ListMetricDescriptorsRequest(name=project, page_size=1)
+            next(iter(client.list_metric_descriptors(request=req)), None)
             return True, f"connected to {_project_id(self.config)}"
         except Exception as exc:  # noqa: BLE001
             return False, f"GCP auth failed: {exc}"
@@ -97,6 +99,8 @@ class GCPConnector(BaseConnector):
 
         project = f"projects/{project_id}"
         metric_type = self.config.get("metric_type", _DEFAULT_METRIC)
+        # Resolve GCE instance IDs -> real names once (best-effort).
+        self._gce_names = self._gce_id_to_name(project_id)
         try:
             client = monitoring_v3.MetricServiceClient(
                 credentials=_credentials(self.config)
@@ -113,9 +117,7 @@ class GCPConnector(BaseConnector):
             )
             for ts in series:
                 labels = dict(ts.resource.labels)
-                service = labels.get("instance_id") or labels.get(
-                    "instance_name"
-                ) or project_id
+                service = self._instance_name(ts, labels, project_id)
                 point = ts.points[0] if ts.points else None
                 value = (
                     point.value.double_value or float(point.value.int64_value or 0)
@@ -139,6 +141,56 @@ class GCPConnector(BaseConnector):
         except Exception as exc:  # noqa: BLE001
             self.log.warning("Cloud Monitoring fetch failed: %s", exc)
         return records
+
+    def _gce_id_to_name(self, project_id: str) -> Dict[str, str]:
+        """Map numeric GCE instance IDs to their human names via the Compute API.
+        Best-effort: needs roles/compute.viewer; returns {} on any failure so we
+        fall back to a labelled id."""
+        try:
+            from googleapiclient.discovery import build
+
+            compute = build("compute", "v1", credentials=_credentials(self.config),
+                            cache_discovery=False)
+            out: Dict[str, str] = {}
+            agg = compute.instances().aggregatedList(project=project_id).execute()
+            for _zone, data in (agg.get("items") or {}).items():
+                for inst in data.get("instances", []) or []:
+                    if inst.get("id") and inst.get("name"):
+                        out[str(inst["id"])] = inst["name"]
+            return out
+        except Exception as exc:  # noqa: BLE001
+            self.log.info("GCE instance-name lookup unavailable (%s); using ids", exc)
+            return {}
+
+    def _instance_name(self, ts, labels: Dict[str, Any], project_id: str) -> str:
+        """A human-readable service name for a monitored resource. Prefer the real
+        GCE instance name (Compute API), then metadata/labels, then a labelled id
+        fallback (never a bare number)."""
+        iid = labels.get("instance_id")
+        gce_names = getattr(self, "_gce_names", {})
+        if iid and str(iid) in gce_names:
+            return gce_names[str(iid)]
+        try:
+            from google.protobuf.json_format import MessageToDict
+
+            sysl = (
+                MessageToDict(ts.metadata.system_labels)
+                if getattr(ts, "metadata", None) and ts.metadata.system_labels
+                else {}
+            )
+        except Exception:  # noqa: BLE001
+            sysl = {}
+        name = (
+            sysl.get("name")
+            or sysl.get("instance_name")
+            or labels.get("instance_name")
+            or labels.get("database_id")  # Cloud SQL: project:instance
+        )
+        if name:
+            return str(name).split(":")[-1]
+        if iid:
+            return f"gce-instance-{iid}"  # labelled, not a bare number
+        return project_id
 
     def _sql_dr_records(self, project_id: str) -> List[Dict[str, Any]]:
         """Derive backup / replication / failover signals from Cloud SQL.
